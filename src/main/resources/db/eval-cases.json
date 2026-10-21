@@ -1,0 +1,74 @@
+[
+  {
+    "name": "RRF 融合公式",
+    "query": "RRF 是怎么把两路排名融合成一个分数的",
+    "difficulty": "MEDIUM",
+    "expect": [["k = 60", "rrf_scores"], ["RRF", "排名", "0.0164"]]
+  },
+  {
+    "name": "BM25 实现方式",
+    "query": "怎么用 BM25 做关键词检索",
+    "difficulty": "MEDIUM",
+    "expect": [["BM25Okapi", "jieba"], ["BM25", "get_scores"]]
+  },
+  {
+    "name": "HNSW 适用规模",
+    "query": "文档量多少适合用 HNSW 索引",
+    "difficulty": "MEDIUM",
+    "expect": [["HNSW", "1万"]]
+  },
+  {
+    "name": "查询重写原理",
+    "query": "查询重写是怎么做的",
+    "difficulty": "EASY",
+    "expect": [["查询重写", "大模型"]]
+  },
+  {
+    "name": "幻觉与准确性",
+    "query": "大模型幻觉会影响答案准确性吗，怎么缓解",
+    "difficulty": "EASY",
+    "expect": [["幻觉", "准确性"]]
+  },
+  {
+    "name": "上下文长度控制",
+    "query": "上下文塞太多会导致什么问题",
+    "difficulty": "EASY",
+    "expect": [["上下文", "token"]]
+  },
+  {
+    "name": "多层缓存命中",
+    "query": "多层缓存怎么提升命中率",
+    "difficulty": "EASY",
+    "expect": [["缓存", "命中"]]
+  },
+  {
+    "name": "切片粒度取舍",
+    "query": "文档为什么要切成小片段再入库",
+    "difficulty": "MEDIUM",
+    "expect": [["片段", "500"]]
+  },
+  {
+    "name": "模型采集深度",
+    "query": "模型的采集深度应执行哪一级要求",
+    "difficulty": "HARD",
+    "expect": [["采集深度", "E.12"]]
+  },
+  {
+    "name": "数据交付平台功能",
+    "query": "数据交付平台有哪些功能",
+    "difficulty": "MEDIUM",
+    "expect": [["数据交付平台", "功能"]]
+  },
+  {
+    "name": "坐标系要求",
+    "query": "三维模型应采用什么坐标系",
+    "difficulty": "HARD",
+    "expect": [["坐标系", "2000"]]
+  },
+  {
+    "name": "实体分类编码",
+    "query": "实体对象的分类编码怎么组成",
+    "difficulty": "HARD",
+    "expect": [["分类编码", "位号"]]
+  }
+]

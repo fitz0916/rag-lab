@@ -732,7 +732,8 @@ const STAGE_TIPS = {
     2: '阶段二：把问题变成向量，去库里找最像的几片',
     3: '阶段三：向量 + BM25 两路召回，RRF 融合排名',
     4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性',
-    5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文'
+    5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文',
+    6: '阶段六：同一批问题跑所有策略，用 Hit@K / MRR 判断优化到底有没有用'
 };
 
 const STAGE_BADGE = {
@@ -740,7 +741,8 @@ const STAGE_BADGE = {
     2: '阶段二 · 向量检索',
     3: '阶段三 · 混合检索',
     4: '阶段四 · 重排序',
-    5: '阶段五 · 上下文控制'
+    5: '阶段五 · 上下文控制',
+    6: '阶段六 · 评测'
 };
 
 function switchStage(n) {
@@ -752,6 +754,7 @@ function switchStage(n) {
     $('stage3Pane').classList.toggle('hidden', n !== 3);
     $('stage4Pane').classList.toggle('hidden', n !== 4);
     $('stage5Pane').classList.toggle('hidden', n !== 5);
+    $('stage6Pane').classList.toggle('hidden', n !== 6);
     $('stageTip').textContent = STAGE_TIPS[n] || '';
     const badge = $('phaseBadge');
     if (badge) {
@@ -1134,7 +1137,10 @@ function renderRuns(data) {
     }
     body.innerHTML = '';
 
-    const TYPE_LABEL = { INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索', RERANK: '重排序', CONTEXT: '上下文' };
+    const TYPE_LABEL = {
+        INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索',
+        RERANK: '重排序', CONTEXT: '上下文', EVAL: '评测'
+    };
 
     data.records.forEach(r => {
         const label = TYPE_LABEL[r.type] || r.type;
@@ -1175,6 +1181,8 @@ function jumpToRun(r) {
         location.href = '/?stage=4&trace=' + r.id;
     } else if (r.type === 'CONTEXT') {
         location.href = '/?stage=5&trace=' + r.id;
+    } else if (r.type === 'EVAL') {
+        location.href = '/?stage=6&run=' + r.id;
     }
 }
 
@@ -1571,5 +1579,320 @@ if (['2', '3', '4', '5'].includes(stageParam)) {
             subscribe(traceParam, () => loadContext(traceParam), `/api/context/${traceParam}/stream`);
             loadContext(traceParam);
         }
+    }
+}
+
+/* ============================================================
+   阶段六：评测
+   ------------------------------------------------------------
+   这一阶段的核心不是「跑得快」，而是「可复现」：
+   同一个问题、同一个 Top-K，把所有策略都跑一遍，用同一把尺子量。
+   ============================================================ */
+const state6 = { runId: null, busy: false, result: null };
+
+/* ---------------- 测试集 ---------------- */
+
+async function loadCases() {
+    try {
+        const res = await fetch('/api/eval/cases').then(r => r.json());
+        if (!res.ok) {
+            $('caseList').innerHTML = `<div class="empty">${escapeHtml(res.message || '加载失败')}</div>`;
+            return;
+        }
+        renderCases(res.data);
+    } catch (e) {
+        $('caseList').innerHTML = `<div class="empty">请求失败：${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderCases(list) {
+    const enabled = list.filter(c => c.enabled).length;
+    $('evalCaseCount').textContent = `测试集 ${enabled}/${list.length} 条启用`;
+
+    const pane = $('caseList');
+    if (!list.length) {
+        pane.innerHTML = '<div class="empty">还没有用例。点右上角「+ 添加用例」。</div>';
+        return;
+    }
+    pane.innerHTML = '';
+    list.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'case-item' + (c.enabled ? '' : ' disabled');
+        const groups = (c.expect || []).map(g => g.join('+')).join('  |  ');
+        div.innerHTML = `
+            <input type="checkbox" class="case-en" ${c.enabled ? 'checked' : ''} title="启用/停用">
+            <div class="case-body">
+                <div class="case-query">
+                    <span class="ci-name">${escapeHtml(c.name)}</span>
+                    <span class="mx-diff ${c.difficulty}">${c.difficulty}</span>
+                </div>
+                <div class="case-query">${escapeHtml(c.query)}</div>
+                <div class="case-expect">期望：${escapeHtml(groups)}</div>
+            </div>
+            <button class="case-del" title="删除">✕</button>`;
+
+        div.querySelector('.case-en').addEventListener('change', async e => {
+            await fetch(`/api/eval/cases/${c.id}/toggle?enabled=${e.target.checked}`, { method: 'POST' });
+            loadCases();
+        });
+        div.querySelector('.case-del').addEventListener('click', async () => {
+            if (!confirm(`删除用例「${c.name}」？`)) return;
+            await fetch(`/api/eval/cases/${c.id}`, { method: 'DELETE' });
+            loadCases();
+        });
+        pane.appendChild(div);
+    });
+}
+
+async function addCase() {
+    const name = $('cfName').value.trim();
+    const query = $('cfQuery').value.trim();
+    const expectText = $('cfExpect').value.trim();
+    const difficulty = $('cfDiff').value;
+    if (!name || !query || !expectText) {
+        alert('用例名、问题、期望关键词都要填');
+        return;
+    }
+    const res = await fetch('/api/eval/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, query, expectText, difficulty })
+    }).then(r => r.json());
+    if (!res.ok) {
+        alert(res.message || '保存失败');
+        return;
+    }
+    $('cfName').value = '';
+    $('cfQuery').value = '';
+    $('cfExpect').value = '';
+    $('caseForm').classList.add('hidden');
+    loadCases();
+}
+
+/* ---------------- 运行评测 ---------------- */
+
+function setBusyEval(busy) {
+    state6.busy = busy;
+    const btn = $('btnEval');
+    btn.disabled = busy;
+    btn.querySelector('.spinner').classList.toggle('hidden', !busy);
+    btn.querySelector('.btn-text').textContent = busy ? '评测中…' : '开始评测';
+}
+
+async function doEval() {
+    const strategies = Array.from(document.querySelectorAll('#evalStrategies input:checked'))
+        .map(i => i.value);
+    if (!strategies.length) {
+        alert('至少选一种策略');
+        return;
+    }
+    const payload = {
+        strategies: strategies.join(','),
+        topK: Number($('evalTopK').value) || 5,
+        recallTopN: Number($('evalRecall').value) || 20
+    };
+
+    setBusyEval(true);
+    clearLog();
+    $('evalSummaryCard').style.display = 'none';
+    $('evalMatrixCard').style.display = 'none';
+
+    try {
+        const res = await fetch('/api/eval/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json());
+
+        if (!res.ok) {
+            appendLocalError(res.message || '提交失败');
+            setBusyEval(false);
+            return;
+        }
+        const runId = res.data.runId;
+        state6.runId = runId;
+        $('logTaskId').textContent = 'eval ' + runId.slice(0, 8);
+
+        subscribe(runId, () => {
+            setBusyEval(false);
+            loadEval(runId);
+        }, `/api/eval/${runId}/stream`);
+
+    } catch (e) {
+        appendLocalError('请求失败：' + e.message);
+        setBusyEval(false);
+    }
+}
+
+async function loadEval(runId) {
+    try {
+        const res = await fetch(`/api/eval/${runId}`).then(r => r.json());
+        if (!res.ok) {
+            $('evalTable').innerHTML = `<div class="empty">${escapeHtml(res.message || '读取失败')}</div>`;
+            return;
+        }
+        state6.result = res.data.result;
+        renderEvalSummary(res.data.run, res.data.result);
+        renderEvalMatrix(res.data.result);
+    } catch (e) {
+        console.warn('读取评测结果失败', e);
+    }
+}
+
+/* ---------------- 结果渲染 ---------------- */
+
+function evBadgeClass(strategy) {
+    const s = String(strategy).toLowerCase();
+    return s === 'vector' ? '' : s;
+}
+
+function pct(v) {
+    return (v * 100).toFixed(1) + '%';
+}
+
+function renderEvalSummary(run, result) {
+    $('evalSummaryCard').style.display = '';
+    $('evalMeta').textContent =
+        `${result.caseCount} 用例 · Top-${result.topK} · 召回 ${result.recallTopN} · ${run.costMs}ms · ${run.status}`;
+
+    const sums = result.strategies || [];
+    if (!sums.length) {
+        $('evalTable').innerHTML = '<div class="empty">没有结果</div>';
+        return;
+    }
+
+    // 每一列单独找最优值：命中率/覆盖率越高越好，耗时越低越好
+    const best = {
+        hit1Rate: Math.max(...sums.map(s => s.hit1Rate)),
+        hit3Rate: Math.max(...sums.map(s => s.hit3Rate)),
+        hitKRate: Math.max(...sums.map(s => s.hitKRate)),
+        mrr: Math.max(...sums.map(s => s.mrr)),
+        avgCoverage: Math.max(...sums.map(s => s.avgCoverage)),
+        avgLatencyMs: Math.min(...sums.map(s => s.avgLatencyMs))
+    };
+    const cls = (key, v) => {
+        if (sums.length < 2) return '';
+        return Math.abs(v - best[key]) < 1e-9 ? 'ev-best' : '';
+    };
+
+    let html = `<table class="ev-table">
+        <thead><tr>
+            <th>策略</th><th>Hit@1</th><th>Hit@3</th><th>Hit@${result.topK}</th>
+            <th>MRR</th><th>覆盖率</th><th>平均耗时</th><th>失败</th>
+        </tr></thead><tbody>`;
+
+    sums.forEach(s => {
+        html += `<tr>
+            <td><span class="ev-name"><span class="ev-badge ${evBadgeClass(s.strategy)}">${s.strategy}</span></span></td>
+            <td class="${cls('hit1Rate', s.hit1Rate)}">${pct(s.hit1Rate)}</td>
+            <td class="${cls('hit3Rate', s.hit3Rate)}">${pct(s.hit3Rate)}</td>
+            <td class="${cls('hitKRate', s.hitKRate)}">${pct(s.hitKRate)}</td>
+            <td class="${cls('mrr', s.mrr)}">${s.mrr.toFixed(3)}</td>
+            <td class="${cls('avgCoverage', s.avgCoverage)}">${pct(s.avgCoverage)}</td>
+            <td class="${cls('avgLatencyMs', s.avgLatencyMs)}">${Math.round(s.avgLatencyMs)}ms</td>
+            <td class="${s.failures > 0 ? 'ev-worst' : ''}">${s.failures || '—'}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    $('evalTable').innerHTML = html;
+
+    // 压缩阶段：排名之外还要看「删了多少字、证据还在不在」
+    const ctx = sums.find(s => s.avgContextChars > 0);
+    const note = $('evalCompress');
+    if (ctx) {
+        const keep = ctx.avgSourceChars > 0 ? ctx.avgContextChars / ctx.avgSourceChars : 0;
+        note.style.display = '';
+        note.innerHTML = `${ctx.strategy} 压缩：源切片平均 ${Math.round(ctx.avgSourceChars)} 字 → 上下文平均 ${Math.round(ctx.avgContextChars)} 字`
+            + `（保留 ${(keep * 100).toFixed(0)}%），<b>上下文里期望组覆盖 ${pct(ctx.avgContextCoverage)}</b>`
+            + `　—　这才是压缩阶段真正该看的指标：删掉 2/3 的文字之后，证据还在不在。`;
+    } else {
+        note.style.display = 'none';
+    }
+}
+
+function renderEvalMatrix(result) {
+    const rows = result.cases || [];
+    if (!rows.length) return;
+    $('evalMatrixCard').style.display = '';
+
+    const strategies = (result.strategies || []).map(s => s.strategy);
+    let html = `<table class="mx-table"><thead><tr><th>用例</th>`
+        + strategies.map(s => `<th>${s}</th>`).join('')
+        + `</tr></thead><tbody>`;
+
+    rows.forEach((row, idx) => {
+        html += `<tr class="mx-case" data-idx="${idx}">
+            <td>${escapeHtml(row.name)}<span class="mx-diff ${row.difficulty}">${row.difficulty}</span></td>`;
+        strategies.forEach(s => {
+            const m = (row.metrics || []).find(x => x.strategy === s);
+            if (!m) {
+                html += '<td><span class="mx-cell miss">—</span></td>';
+                return;
+            }
+            if (m.error) {
+                html += `<td><span class="mx-cell err" title="${escapeAttr(m.error)}">!</span></td>`;
+            } else if (m.firstRank > 0) {
+                const c = m.firstRank <= 3 ? 'ok' : 'mid';
+                html += `<td><span class="mx-cell ${c}" title="覆盖率 ${pct(m.coverage)}">#${m.firstRank}</span></td>`;
+            } else {
+                html += '<td><span class="mx-cell miss">—</span></td>';
+            }
+        });
+        html += '</tr>';
+
+        // 展开行：每条策略命中了哪些关键词组 + Top1 内容
+        html += `<tr class="mx-detail" data-detail="${idx}" style="display:none"><td colspan="${strategies.length + 1}">`;
+        strategies.forEach(s => {
+            const m = (row.metrics || []).find(x => x.strategy === s);
+            if (!m) return;
+            const matched = (m.matched || []).length
+                ? m.matched.map(g => `<code>${escapeHtml(g)}</code>`).join(' ')
+                : '<span style="color:#b91c1c">未命中期望关键词</span>';
+            const top = (m.top || [])[0];
+            html += `<div class="mx-detail-row">
+                <div class="k">${s}</div>
+                <div class="v">
+                    排名 ${m.firstRank > 0 ? '#' + m.firstRank : '—'} · 覆盖 ${pct(m.coverage)} · ${m.latencyMs}ms
+                    ${m.error ? ' · <span style="color:#b91c1c">' + escapeHtml(m.error) + '</span>' : ''}<br>
+                    命中：${matched}<br>
+                    ${top ? 'Top1：' + escapeHtml((top.text || '').slice(0, 160)) : '<span style="color:#9aa3af">无结果</span>'}
+                    ${m.contextChars > 0 ? `<br>压缩：${m.sourceChars} 字 → <b>${m.contextChars}</b> 字，上下文覆盖 ${pct(m.contextCoverage)}` : ''}
+                </div>
+            </div>`;
+        });
+        html += '</td></tr>';
+    });
+    html += '</tbody></table>';
+    $('evalMatrix').innerHTML = html;
+
+    $('evalMatrix').querySelectorAll('tr.mx-case').forEach(tr => {
+        tr.addEventListener('click', () => {
+            const d = $('evalMatrix').querySelector(`tr[data-detail="${tr.dataset.idx}"]`);
+            if (d) {
+                d.style.display = d.style.display === 'none' ? '' : 'none';
+            }
+        });
+    });
+}
+
+/* ---------------- 事件绑定 ---------------- */
+
+$('btnEval').addEventListener('click', doEval);
+$('btnAddCase').addEventListener('click', addCase);
+$('btnToggleCaseForm').addEventListener('click', () => {
+    $('caseForm').classList.toggle('hidden');
+});
+
+loadCases();
+
+/* 深链：?stage=6&run=<id> 直接打开某次评测结果 */
+if (params.get('stage') === '6') {
+    switchStage(6);
+    const runParam = params.get('run');
+    if (runParam) {
+        state6.runId = runParam;
+        $('logTaskId').textContent = 'eval ' + runParam.slice(0, 8);
+        subscribe(runParam, () => loadEval(runParam), `/api/eval/${runParam}/stream`);
+        loadEval(runParam);
     }
 }

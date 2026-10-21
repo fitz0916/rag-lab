@@ -66,6 +66,13 @@
                 <i>拆句 → 打分 → 去重 → 只留关键句</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="6">
+            <span class="st-num">06</span>
+            <span class="st-text">
+                <b>评测</b>
+                <i>同一批问题跑所有策略，用指标说话</i>
+            </span>
+        </button>
         <div class="stage-tip" id="stageTip">阶段一：先把知识灌进向量库</div>
     </nav>
 
@@ -527,6 +534,125 @@
                 <p class="dim">
                     分数参考：VECTOR 策略是句子与问题的余弦相似度，0.4~0.7 算相关；
                     KEYWORD 策略是覆盖率加权，绝对值不可比，只看相对排序。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段六：评测 ==================== -->
+        <section class="left hidden" id="stage6Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>06 · 跑一次评测</h2>
+                    <span class="hint-inline" id="evalCaseCount">测试集读取中…</span>
+                </div>
+
+                <div class="eval-config">
+                    <div class="ec-block">
+                        <span class="ec-label">对比策略</span>
+                        <div class="chk-group" id="evalStrategies">
+                            <label class="chk"><input type="checkbox" value="VECTOR" checked><span>VECTOR</span></label>
+                            <label class="chk"><input type="checkbox" value="HYBRID" checked><span>HYBRID</span></label>
+                            <label class="chk"><input type="checkbox" value="RERANK" checked><span>RERANK</span></label>
+                            <label class="chk"><input type="checkbox" value="CONTEXT" checked><span>CONTEXT</span></label>
+                        </div>
+                    </div>
+                    <div class="ec-nums">
+                        <label>Top-K
+                            <input class="input" id="evalTopK" type="number" value="5" min="1" max="20">
+                        </label>
+                        <label>召回 N
+                            <input class="input" id="evalRecall" type="number" value="20" min="5" max="50">
+                        </label>
+                    </div>
+                </div>
+
+                <button class="primary" id="btnEval">
+                    <span class="spinner hidden"></span><span class="btn-text">开始评测</span>
+                </button>
+                <p class="hint-inline" style="margin-top:8px">
+                    12 条用例 × 4 种策略约 20~40 秒。每一步都在右侧日志里，包含每个用例每个策略的排名。
+                </p>
+            </div>
+
+            <div class="card" id="evalSummaryCard" style="display:none">
+                <div class="card-head">
+                    <h2>策略对比</h2>
+                    <span class="hint-inline" id="evalMeta"></span>
+                </div>
+                <div id="evalTable" class="result-pane"></div>
+                <div id="evalCompress" class="compress-note" style="display:none"></div>
+                <div class="eval-legend">
+                    <b>Hit@1</b> 第一条就是相关 · <b>Hit@3</b> 前三条里有 · <b>Hit@K</b> 前 K 条里有 ·
+                    <b>MRR</b> 1/第一条相关的排名（越接近 1 越靠前）·
+                    <b>覆盖率</b> Top-K 里命中了几个期望关键词组<br>
+                    同一批用例、同一个 Top-K 才有可比性。耗时不含问题向量化（四种策略共用一次）。
+                </div>
+            </div>
+
+            <div class="card" id="evalMatrixCard" style="display:none">
+                <div class="card-head">
+                    <h2>逐用例明细</h2>
+                    <span class="hint-inline">数字 = 第一条相关结果排第几，— = Top-K 里没有</span>
+                </div>
+                <div id="evalMatrix" class="result-pane"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>测试集</h2>
+                    <button class="mini-btn" id="btnToggleCaseForm">+ 添加用例</button>
+                </div>
+
+                <div class="case-form hidden" id="caseForm">
+                    <div class="cf-row">
+                        <label>用例名<input class="input" id="cfName" placeholder="如：坐标系要求"></label>
+                        <label>难度
+                            <select class="input" id="cfDiff">
+                                <option value="EASY">EASY</option>
+                                <option value="MEDIUM" selected>MEDIUM</option>
+                                <option value="HARD">HARD</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label>测试问题<input class="input" id="cfQuery" placeholder="三维模型应采用什么坐标系"></label>
+                    <label>期望关键词<input class="input" id="cfExpect" placeholder="坐标系,2000 | 坐标系,CGCS2000"></label>
+                    <div class="cf-actions">
+                        <button class="mini-btn primary-mini" id="btnAddCase">保存用例</button>
+                    </div>
+                </div>
+
+                <div id="caseList" class="result-pane"></div>
+                <p class="hint-inline">
+                    期望关键词格式：<code>坐标系,2000 | 坐标系,CGCS2000</code>
+                    —— <code>|</code> 分组，逗号分隔的关键词必须同时出现才算命中；命中任意一组即算相关。
+                </p>
+            </div>
+
+            <div class="card learn-note">
+                <h4>这一阶段在学什么</h4>
+                <p>
+                    <b>没有评测，就没有优化。</b> 前面五个阶段的效果都是靠单个案例的观感判断的 ——
+                    「看，3.10 排到第一了」。但换一个问题呢？改一下切片大小呢？
+                    你没法回答「这次改动是变好了还是变差了」，只能说「好像好一点」。
+                </p>
+                <p>
+                    <b>指标怎么读</b>：
+                </p>
+                <ul>
+                    <li><b>Hit@1</b> 最严格 —— Top1 就是答案，直接决定大模型看到的重点。</li>
+                    <li><b>Hit@K</b> 是「有救」—— 有相关就行，反正都会喂给模型。</li>
+                    <li><b>MRR</b> 看「排得够不够靠前」，比 Hit 更细。</li>
+                    <li><b>覆盖率</b> 看「答案是否完整」—— 一个问题需要两个条件时，只命中一个也算 Hit@1，但答案不全。</li>
+                </ul>
+                <p>
+                    <b>别只看平均分。</b> 同样的 MRR 可能由完全不同的用例支撑。
+                    点开逐用例明细，才能看出某个策略是「简单题都稳、难题全崩」，还是「整体都还行」。
+                </p>
+                <p class="dim">
+                    诚实提醒：关键词判定只能验证字面命中，验证不了语义正确。
+                    低分不一定是实现错，也可能是用例写得刁或者库里确实没有答案。
+                    12 条用例的样本很小，一两条的差异不要过度解读。
                 </p>
             </div>
         </section>

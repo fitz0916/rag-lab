@@ -62,8 +62,9 @@ public class RunRecordDao {
         boolean hybrid = all || RunRecord.TYPE_HYBRID.equals(t);
         boolean rerank = all || RunRecord.TYPE_RERANK.equals(t);
         boolean context = all || RunRecord.TYPE_CONTEXT.equals(t);
+        boolean eval = all || RunRecord.TYPE_EVAL.equals(t);
 
-        if (!ingest && !retrieve && !hybrid && !rerank && !context) {
+        if (!ingest && !retrieve && !hybrid && !rerank && !context && !eval) {
             return List.of();
         }
 
@@ -137,6 +138,23 @@ public class RunRecordDao {
                       WHERE 1=1 """).append(failCond)
                     .append("ORDER BY created_at DESC LIMIT ?)");
             args.add(limit);
+            first = false;
+        }
+        if (eval) {
+            if (!first) {
+                sql.append(" UNION ALL ");
+            }
+            sql.append("""
+                    (SELECT 'EVAL' AS run_type, id, CONCAT(strategies, ' · ', case_count, ' 用例') AS title,
+                            status, cost_ms, created_at AS ts,
+                            CONCAT('Top-', top_k, ' · 召回 ', recall_topn, ' · ', case_count, ' 用例 × ',
+                                   LENGTH(strategies) - LENGTH(REPLACE(strategies, ',', '')) + 1, ' 策略') AS summary,
+                            error_msg
+                       FROM kb_eval_run
+                      WHERE 1=1 """).append(failCond)
+                    .append("ORDER BY created_at DESC LIMIT ?)");
+            args.add(limit);
+            first = false;
         }
         sql.append(") t ORDER BY ts DESC LIMIT ?");
         args.add(limit);

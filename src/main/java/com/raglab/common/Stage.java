@@ -47,7 +47,14 @@ public enum Stage {
     CONTEXT_SCORE("句子打分", "每句单独和问题算相似度（向量 or 关键词密度）"),
     CONTEXT_SELECT("选句去重", "选最相关的 N 句；相似度过高的只留一条（overlap 会造成重复）"),
     CONTEXT_BUILD("组装上下文", "按原文顺序拼接，按字数上限截断 —— 顺序乱了读起来就不通顺"),
-    CONTEXT_DONE("完成", "写入 kb_context_trace");
+    CONTEXT_DONE("完成", "写入 kb_context_trace"),
+
+    // ============ 阶段六：评测 ============
+    EVAL_LOAD("载入测试集", "从 kb_eval_case 读出问题与期望关键词组"),
+    EVAL_CASE("逐用例检索", "同一个问题分别跑多种策略 —— 只有同题对比才说明问题"),
+    EVAL_SCORE("计算指标", "Hit@1 / Hit@3 / Hit@K、MRR、关键词覆盖率"),
+    EVAL_AGGREGATE("汇总对比", "按策略聚合，看谁在哪类问题上更强、代价多少"),
+    EVAL_DONE("完成", "写入 kb_eval_run / kb_eval_detail");
 
     private final String label;
     private final String description;

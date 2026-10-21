@@ -28,4 +28,5 @@ public record RunRecord(
     public static final String TYPE_HYBRID = "HYBRID";
     public static final String TYPE_RERANK = "RERANK";
     public static final String TYPE_CONTEXT = "CONTEXT";
+    public static final String TYPE_EVAL = "EVAL";
 }

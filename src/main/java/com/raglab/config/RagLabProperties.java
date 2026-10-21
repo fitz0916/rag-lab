@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "raglab")
 public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
-                               Log log, Rerank rerank, Context context) {
+                               Log log, Rerank rerank, Context context, Eval eval) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -78,5 +78,15 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
      * @param dedupThreshold       两句相似度超过这个值只留一条（overlap 会导致相邻切片重复）
      */
     public record Context(String strategy, int maxSentencesPerChunk, int maxChars, double dedupThreshold) {
+    }
+
+    /**
+     * 评测配置（阶段六）
+     *
+     * @param topK      评测时每个策略取前几条算指标（要和实际喂给大模型的条数一致）
+     * @param recallTopN 混合检索/重排的召回条数
+     * @param strategies 默认评测哪几种策略，逗号分隔
+     */
+    public record Eval(int topK, int recallTopN, String strategies) {
     }
 }

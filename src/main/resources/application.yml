@@ -102,3 +102,12 @@ raglab:
     max-chars: 1200
     # 两句相似度超过这个值只留一条（阶段一的 overlap 会让相邻切片重复）
     dedup-threshold: 0.85
+
+  # ============ 阶段六：评测 ============
+  eval:
+    # 取前几条算指标。要和实际喂给大模型的条数一致，否则指标好看但没意义
+    top-k: ${EVAL_TOP_K:5}
+    # 混合检索 / 重排的召回条数
+    recall-topn: ${EVAL_RECALL_TOPN:20}
+    # 默认评测的策略组合
+    strategies: ${EVAL_STRATEGIES:VECTOR,HYBRID,RERANK,CONTEXT}

@@ -165,3 +165,61 @@ CREATE TABLE IF NOT EXISTS kb_context_trace
     KEY idx_context_time (created_at)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4 COMMENT '上下文轨迹（阶段五）';
+
+-- ============================================================
+-- 评测（阶段六）：测试集 / 评测运行 / 逐用例逐策略明细
+-- 为什么要单独建表而不是写死一批问题？
+--   因为「优化到底有没有用」必须可复现。问题、期望关键词、每次运行的指标
+--   都落库，才能回答「上周改了切分参数，命中率是涨了还是跌了」。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS kb_eval_case
+(
+    id          BIGINT       NOT NULL AUTO_INCREMENT,
+    case_name   VARCHAR(120) NOT NULL COMMENT '用例名，如「RRF 融合公式」',
+    query_text  VARCHAR(500) NOT NULL COMMENT '测试问题',
+    expect_json VARCHAR(1000) NOT NULL COMMENT '期望关键词组 JSON：[[\"a\",\"b\"],[\"c\"]]，命中任一组的切片算相关',
+    difficulty  VARCHAR(16)  NOT NULL DEFAULT 'MEDIUM' COMMENT 'EASY/MEDIUM/HARD，用来观察不同难度下的差异',
+    enabled     TINYINT      NOT NULL DEFAULT 1,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_eval_case_enabled (enabled)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '评测测试集（阶段六）';
+
+CREATE TABLE IF NOT EXISTS kb_eval_run
+(
+    id          VARCHAR(36)   NOT NULL COMMENT '运行 id，同时作为 SSE 日志的 task_id',
+    strategies  VARCHAR(120)  NOT NULL COMMENT '本次评测了哪几种策略，逗号分隔',
+    top_k       INT           NOT NULL DEFAULT 5,
+    recall_topn INT           NOT NULL DEFAULT 20,
+    case_count  INT           NOT NULL DEFAULT 0,
+    status      VARCHAR(16)   NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED',
+    cost_ms     BIGINT        NOT NULL DEFAULT 0,
+    error_msg   VARCHAR(2000)          DEFAULT NULL,
+    summary_json MEDIUMTEXT            DEFAULT NULL COMMENT '完整评测结果（含逐用例明细与 Top 命中）',
+    created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_eval_run_time (created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '评测运行（阶段六）';
+
+CREATE TABLE IF NOT EXISTS kb_eval_detail
+(
+    id         BIGINT      NOT NULL AUTO_INCREMENT,
+    run_id     VARCHAR(36) NOT NULL,
+    case_id    BIGINT      NOT NULL,
+    strategy   VARCHAR(16) NOT NULL,
+    hit1       TINYINT     NOT NULL DEFAULT 0,
+    hit3       TINYINT     NOT NULL DEFAULT 0,
+    hit_k      TINYINT     NOT NULL DEFAULT 0,
+    first_rank INT         NOT NULL DEFAULT -1 COMMENT '第一条相关结果的排名，-1 表示没命中',
+    mrr        DOUBLE      NOT NULL DEFAULT 0,
+    coverage   DOUBLE      NOT NULL DEFAULT 0 COMMENT 'Top-K 内命中的期望关键词组比例',
+    matched    VARCHAR(500)         DEFAULT NULL COMMENT '命中的关键词组，便于回看为什么算命中',
+    latency_ms BIGINT      NOT NULL DEFAULT 0,
+    error_msg  VARCHAR(1000)        DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_eval_detail_run (run_id, strategy),
+    KEY idx_eval_detail_case (case_id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '评测明细（阶段六）';

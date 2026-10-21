@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.raglab.common.ExternalServiceException;
 import com.raglab.config.RagLabProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -35,6 +37,8 @@ import java.util.Map;
  */
 @Component
 public class RerankClient {
+
+    private static final Logger log = LoggerFactory.getLogger(RerankClient.class);
 
     /** 单条文档送模型的字符上限，防止超 token 限制 */
     private static final int MAX_DOC_CHARS = 4000;
@@ -125,30 +129,55 @@ public class RerankClient {
         body.put("parameters", params);
 
         long t0 = System.currentTimeMillis();
-        try {
-            String raw = restClient.post()
-                    .uri(cfg.endpoint())
-                    .header("Authorization", "Bearer " + apiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
-
-            JsonNode root = objectMapper.readTree(raw == null ? "{}" : raw);
-            JsonNode results = root.path("output").path("results");
-            if (!results.isArray()) {
-                throw new IllegalStateException("rerank 响应里没有 output.results，原始响应：" + truncate(raw));
+        int attempts = 3;
+        Exception last = null;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                return doCall(body, docs.size(), t0);
+            } catch (Exception e) {
+                last = e;
+                // 鉴权错了重试多少次都没用，直接抛
+                if (e instanceof org.springframework.web.client.RestClientResponseException http
+                        && (http.getStatusCode().value() == 401 || http.getStatusCode().value() == 403)) {
+                    break;
+                }
+                if (attempt < attempts) {
+                    log.warn("rerank 第 {}/{} 次调用失败（{}），{}ms 后重试",
+                            attempt, attempts, e.getMessage(), 800L * attempt);
+                    try {
+                        Thread.sleep(800L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
             }
-            List<Score> scores = new ArrayList<>(results.size());
-            for (JsonNode r : results) {
-                scores.add(new Score(r.path("index").asInt(-1), r.path("relevance_score").asDouble(0)));
-            }
-            int tokens = root.path("usage").path("total_tokens").asInt(0);
-            return new Result(scores, tokens, System.currentTimeMillis() - t0);
-        } catch (Exception e) {
-            throw new ExternalServiceException("DashScope-Rerank",
-                    "重排失败（model=%s, %d 条候选）".formatted(cfg.model(), docs.size()), e);
         }
+        throw new ExternalServiceException("DashScope-Rerank",
+                "重排失败（model=%s, %d 条候选, 已重试 %d 次）".formatted(cfg.model(), docs.size(), attempts - 1),
+                last);
+    }
+
+    private Result doCall(Map<String, Object> body, int docCount, long t0) throws Exception {
+        String raw = restClient.post()
+                .uri(cfg.endpoint())
+                .header("Authorization", "Bearer " + apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(String.class);
+
+        JsonNode root = objectMapper.readTree(raw == null ? "{}" : raw);
+        JsonNode results = root.path("output").path("results");
+        if (!results.isArray()) {
+            throw new IllegalStateException("rerank 响应里没有 output.results，原始响应：" + truncate(raw));
+        }
+        List<Score> scores = new ArrayList<>(results.size());
+        for (JsonNode r : results) {
+            scores.add(new Score(r.path("index").asInt(-1), r.path("relevance_score").asDouble(0)));
+        }
+        int tokens = root.path("usage").path("total_tokens").asInt(0);
+        return new Result(scores, tokens, System.currentTimeMillis() - t0);
     }
 
     private String truncate(String s) {

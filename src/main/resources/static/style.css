@@ -2249,3 +2249,441 @@ body {
     background: #ccfbf1;
     color: #0f766e;
 }
+
+/* ============================================================
+   阶段六：评测
+   ============================================================ */
+.eval-config {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.ec-block {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ec-label {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.chk-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.chk {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    font-size: 11.5px;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: .13s;
+    user-select: none;
+}
+
+.chk:hover {
+    border-color: #c7d2fe;
+    background: #f8faff;
+}
+
+.chk:has(input:checked) {
+    border-color: #a5b4fc;
+    background: #eef2ff;
+    color: #312e81;
+    font-weight: 600;
+}
+
+.chk input {
+    margin: 0;
+    accent-color: #4f46e5;
+}
+
+.ec-nums {
+    display: flex;
+    gap: 10px;
+}
+
+.ec-nums label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.ec-nums .input {
+    width: 84px;
+    height: 36px;
+}
+
+/* 汇总表 */
+.ev-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.ev-table th {
+    text-align: right;
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+}
+
+.ev-table th:first-child {
+    text-align: left;
+}
+
+.ev-table td {
+    padding: 8px 8px;
+    border-bottom: 1px solid #f1f5f9;
+    text-align: right;
+    font-family: var(--mono);
+    color: #374151;
+    white-space: nowrap;
+}
+
+.ev-table td:first-child {
+    text-align: left;
+}
+
+.ev-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.ev-table .ev-best {
+    color: #15803d;
+    font-weight: 700;
+}
+
+.ev-table .ev-worst {
+    color: #b91c1c;
+}
+
+.ev-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: #1f2328;
+}
+
+.ev-badge {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #eef2ff;
+    color: #4338ca;
+    letter-spacing: .3px;
+}
+
+.ev-badge.hybrid {
+    background: #ecfdf5;
+    color: #15803d;
+}
+
+.ev-badge.rerank {
+    background: #f3e8ff;
+    color: #7e22ce;
+}
+
+.ev-badge.context {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.compress-note {
+    margin-top: 10px;
+    padding: 9px 12px;
+    background: linear-gradient(135deg, #f0fdfa, #eef2ff);
+    border: 1px solid #ccfbf1;
+    border-radius: 8px;
+    font-size: 11.5px;
+    line-height: 1.8;
+    color: #0f766e;
+    font-family: var(--mono);
+}
+
+.eval-legend {
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--line);
+    font-size: 11px;
+    line-height: 1.9;
+    color: #6b7280;
+}
+
+.eval-legend b {
+    color: #374151;
+    font-family: var(--mono);
+}
+
+/* 逐用例矩阵 */
+.mx-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+}
+
+.mx-table th {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--line);
+    text-align: center;
+    font-family: var(--mono);
+}
+
+.mx-table th:first-child {
+    text-align: left;
+}
+
+.mx-table td {
+    padding: 6px 6px;
+    border-bottom: 1px solid #f6f8fa;
+    text-align: center;
+    font-family: var(--mono);
+}
+
+.mx-table td:first-child {
+    text-align: left;
+    color: #374151;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mx-case {
+    cursor: pointer;
+}
+
+.mx-case:hover {
+    background: #f8faff;
+}
+
+.mx-cell {
+    display: inline-block;
+    min-width: 34px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.mx-cell.ok {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.mx-cell.mid {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.mx-cell.miss {
+    background: #f1f5f9;
+    color: #94a3b8;
+}
+
+.mx-cell.err {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mx-diff {
+    font-size: 9.5px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #64748b;
+    margin-left: 5px;
+}
+
+.mx-diff.HARD {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mx-diff.EASY {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.mx-detail td {
+    background: #fbfcfe;
+    padding: 10px 12px;
+    text-align: left;
+}
+
+.mx-detail-row {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11px;
+    line-height: 1.7;
+    align-items: flex-start;
+}
+
+.mx-detail-row .k {
+    flex: 0 0 72px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: #4338ca;
+    font-size: 10.5px;
+}
+
+.mx-detail-row .v {
+    flex: 1;
+    min-width: 0;
+    color: #4b5563;
+    word-break: break-word;
+}
+
+.mx-detail-row .v code {
+    background: #f1f5f9;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 10.5px;
+    color: #0f766e;
+}
+
+/* 测试集列表 */
+.case-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: #fcfcfd;
+}
+
+.case-item.disabled {
+    opacity: .5;
+}
+
+.ci-name {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #1f2328;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.case-query {
+    font-size: 12px;
+    color: #374151;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.case-expect {
+    margin-top: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #0f766e;
+    word-break: break-all;
+}
+
+.case-del {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px 4px;
+}
+
+.case-del:hover {
+    color: #dc2626;
+}
+
+.case-form {
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+}
+
+.case-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+}
+
+.cf-row {
+    display: flex;
+    gap: 10px;
+}
+
+.cf-row label:first-child {
+    flex: 1;
+}
+
+.cf-row label:last-child {
+    flex: 0 0 100px;
+}
+
+.case-form .input {
+    height: 34px;
+}
+
+.cf-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.primary-mini {
+    background: #4f46e5;
+    color: #fff;
+    border-color: #4f46e5;
+    padding: 5px 14px;
+    font-size: 11.5px;
+}
+
+.primary-mini:hover {
+    background: #4338ca;
+    color: #fff;
+}
+
+/* 运行记录：评测类型 */
+.ri-type.eval {
+    background: #fef9c3;
+    color: #a16207;
+}
