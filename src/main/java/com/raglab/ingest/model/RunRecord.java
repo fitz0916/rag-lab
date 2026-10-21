@@ -26,4 +26,5 @@ public record RunRecord(
     public static final String TYPE_INGEST = "INGEST";
     public static final String TYPE_RETRIEVE = "RETRIEVE";
     public static final String TYPE_HYBRID = "HYBRID";
+    public static final String TYPE_RERANK = "RERANK";
 }

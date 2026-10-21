@@ -82,3 +82,12 @@ raglab:
     # 运行日志保留天数。<=0 表示永久保留（不推荐，表会一直涨）
     # 每天 03:30 自动清理，按 created_at 索引走，不会全表扫
     retention-days: ${LOG_RETENTION_DAYS:30}
+
+  rerank:
+    # DashScope 原生 rerank 接口（不是 OpenAI 兼容协议）
+    # 复用 embedding 那套 API Key，换服务地址即可
+    base-url: ${RERANK_BASE_URL:https://dashscope.aliyuncs.com}
+    model: ${RERANK_MODEL:gte-rerank-v2}
+    timeout-seconds: 60
+    # 单次送给重排模型的候选上限，太多会超 token 限制
+    max-documents: 50

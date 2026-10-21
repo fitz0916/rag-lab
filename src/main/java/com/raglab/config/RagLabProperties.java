@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 全部可调参数集中在这里，改 application.yml 即可，不用动代码。
  */
 @ConfigurationProperties(prefix = "raglab")
-public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk, Log log) {
+public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk, Log log, Rerank rerank) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -53,6 +53,18 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk, 
     public record Log(int retentionDays) {
         public int effectiveRetentionDays() {
             return retentionDays;
+        }
+    }
+
+    /**
+     * 重排序配置（阶段四）—— 用的是 DashScope 原生的 rerank 接口，
+     * 不是 OpenAI 兼容协议，所以 baseUrl 也不同。
+     *
+     * @param maxDocuments 单次最多送多少条给重排模型（多了会超 token 限制）
+     */
+    public record Rerank(String baseUrl, String model, int timeoutSeconds, int maxDocuments) {
+        public String endpoint() {
+            return "/api/v1/services/rerank/text-rerank/text-rerank";
         }
     }
 }

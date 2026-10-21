@@ -125,3 +125,21 @@ CREATE TABLE IF NOT EXISTS kb_hybrid_trace
     KEY idx_hybrid_time (created_at)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4 COMMENT '混合检索轨迹（阶段三）';
+
+-- 重排序轨迹：阶段四，记录召回候选与重排后的排名变化
+CREATE TABLE IF NOT EXISTS kb_rerank_trace
+(
+    id          VARCHAR(36)   NOT NULL COMMENT '轨迹 id，同时作为 SSE 日志的 task_id',
+    query_text  VARCHAR(1000) NOT NULL,
+    recall_topn INT           NOT NULL DEFAULT 20 COMMENT '召回阶段候选数',
+    final_topk  INT           NOT NULL DEFAULT 5 COMMENT '重排后取几条',
+    hit_count   INT           NOT NULL DEFAULT 0,
+    cost_ms     BIGINT        NOT NULL DEFAULT 0,
+    status      VARCHAR(16)   NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED',
+    error_msg   VARCHAR(2000)          DEFAULT NULL,
+    result_json MEDIUMTEXT             DEFAULT NULL COMMENT '召回排名 + 重排分 + 排名变化',
+    created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_rerank_time (created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '重排序轨迹（阶段四）';

@@ -29,7 +29,13 @@ const STAGE_LABEL = {
     BM25_RECALL: 'BM25召回',
     RRF_FUSE: 'RRF融合',
     HYBRID_RESULT: '融合结果',
-    HYBRID_DONE: '完成'
+    HYBRID_DONE: '完成',
+    // 阶段四：重排序
+    RERANK_RECALL: '混合召回',
+    RERANK_SCORE: '重排打分',
+    RERANK_REORDER: '按分重排',
+    RERANK_RESULT: '重排结果',
+    RERANK_DONE: '完成'
 };
 
 const state = {
@@ -717,13 +723,15 @@ if (urlDoc) {
 const STAGE_TIPS = {
     1: '阶段一：先把知识灌进向量库',
     2: '阶段二：把问题变成向量，去库里找最像的几片',
-    3: '阶段三：向量 + BM25 两路召回，RRF 融合排名'
+    3: '阶段三：向量 + BM25 两路召回，RRF 融合排名',
+    4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性'
 };
 
 const STAGE_BADGE = {
     1: '阶段一 · 切片入库',
     2: '阶段二 · 向量检索',
-    3: '阶段三 · 混合检索'
+    3: '阶段三 · 混合检索',
+    4: '阶段四 · 重排序'
 };
 
 function switchStage(n) {
@@ -733,6 +741,7 @@ function switchStage(n) {
     $('stage1Pane').classList.toggle('hidden', n !== 1);
     $('stage2Pane').classList.toggle('hidden', n !== 2);
     $('stage3Pane').classList.toggle('hidden', n !== 3);
+    $('stage4Pane').classList.toggle('hidden', n !== 4);
     $('stageTip').textContent = STAGE_TIPS[n] || '';
     const badge = $('phaseBadge');
     if (badge) {
@@ -1059,31 +1068,7 @@ $('hybridQuery').addEventListener('keydown', e => {
     }
 });
 
-/* ------------------------------------------------------------
-   URL 深链：?stage=2 / ?stage=3 直接打开对应阶段，带 trace 可回放
-   必须放在文件最末尾 —— 上面的 state2 / state3 是 const，提前引用会触发
-   暂时性死区（TDZ）报错，导致整段脚本中断、页面一片空白。
-   ------------------------------------------------------------ */
-const stageParam = params.get('stage');
-if (stageParam === '2' || stageParam === '3') {
-    switchStage(Number(stageParam));
-    const traceParam = params.get('trace');
-    if (traceParam) {
-        if (stageParam === '2') {
-            state2.traceId = traceParam;
-            $('traceCard').style.display = '';
-            $('logTaskId').textContent = 'query ' + traceParam.slice(0, 8);
-            subscribe(traceParam, () => loadTrace(traceParam), `/api/retrieve/${traceParam}/stream`);
-            loadTrace(traceParam);
-        } else {
-            state3.traceId = traceParam;
-            $('hybridTraceCard').style.display = '';
-            $('logTaskId').textContent = 'hybrid ' + traceParam.slice(0, 8);
-            subscribe(traceParam, () => loadHybrid(traceParam), `/api/hybrid/${traceParam}/stream`);
-            loadHybrid(traceParam);
-        }
-    }
-}
+/* 注：?stage=2/3/4 的深链逻辑统一放在文件最末尾，见文末注释 */
 
 /* ============================================================
    运行记录（历史日志入口）
@@ -1139,7 +1124,7 @@ function renderRuns(data) {
     }
     body.innerHTML = '';
 
-    const TYPE_LABEL = { INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索' };
+    const TYPE_LABEL = { INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索', RERANK: '重排序' };
 
     data.records.forEach(r => {
         const label = TYPE_LABEL[r.type] || r.type;
@@ -1176,6 +1161,8 @@ function jumpToRun(r) {
         location.href = '/?stage=2&trace=' + r.id;
     } else if (r.type === 'HYBRID') {
         location.href = '/?stage=3&trace=' + r.id;
+    } else if (r.type === 'RERANK') {
+        location.href = '/?stage=4&trace=' + r.id;
     }
 }
 
@@ -1200,4 +1187,195 @@ $('runOnlyFailed').addEventListener('change', e => {
 /* 深链：?runs=1 直接打开运行记录（便于分享/书签） */
 if (params.get('runs') === '1') {
     openRuns();
+}
+
+/* ============================================================
+   阶段四：重排序 Rerank
+   ============================================================ */
+const state4 = { traceId: null, busy: false };
+
+function setBusyRerank(busy) {
+    state4.busy = busy;
+    const btn = $('btnRerank');
+    btn.disabled = busy;
+    btn.querySelector('.spinner').classList.toggle('hidden', !busy);
+    btn.querySelector('.btn-text').textContent = busy ? '重排中…' : '开始重排';
+}
+
+async function doRerank() {
+    const query = $('rerankQuery').value.trim();
+    if (!query) {
+        $('rerankQuery').focus();
+        return;
+    }
+    const payload = {
+        query,
+        recallTopN: Number($('recallTopN').value) || 20,
+        finalTopK: Number($('rerankTopK').value) || 5
+    };
+
+    setBusyRerank(true);
+    clearLog();
+    $('rerankTraceCard').style.display = '';
+    $('rerankStatus').textContent = 'RUNNING';
+    $('rerankStatus').className = 'badge-status';
+    $('rerankHitPane').innerHTML = '<div class="empty">正在召回并逐条打分…</div>';
+    $('rerankHitCount').textContent = '重排中';
+    $('droppedCard').style.display = 'none';
+
+    try {
+        const res = await fetch('/api/rerank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json());
+
+        if (!res.ok) {
+            appendLocalError(res.message || '提交失败');
+            setBusyRerank(false);
+            return;
+        }
+        const traceId = res.data.traceId;
+        state4.traceId = traceId;
+        $('logTaskId').textContent = 'rerank ' + traceId.slice(0, 8);
+
+        subscribe(traceId, () => {
+            setBusyRerank(false);
+            loadRerank(traceId);
+        }, `/api/rerank/${traceId}/stream`);
+
+    } catch (e) {
+        appendLocalError('请求失败：' + e.message);
+        setBusyRerank(false);
+    }
+}
+
+async function loadRerank(traceId) {
+    try {
+        const res = await fetch(`/api/rerank/${traceId}`).then(r => r.json());
+        if (!res.ok) {
+            $('rerankHitPane').innerHTML = `<div class="empty">${escapeHtml(res.message || '读取失败')}</div>`;
+            return;
+        }
+        renderRerankTrace(res.data.trace, res.data.result);
+        renderRerankHits(res.data.result);
+    } catch (e) {
+        console.warn('读取重排结果失败', e);
+    }
+}
+
+function renderRerankTrace(t, r) {
+    const badge = $('rerankStatus');
+    badge.textContent = t.status;
+    badge.className = 'badge-status' + (t.status === 'SUCCESS' ? ' success' : t.status === 'FAILED' ? ' failed' : '');
+
+    $('rrRecall').textContent = r.recallCount || '—';
+    $('rrScored').textContent = r.scoredCount || '—';
+    const sel = r.selected || [];
+    $('rrTop1').textContent = sel.length ? Number(sel[0].rerankScore).toFixed(4) : '—';
+    $('rrCost').textContent = t.costMs ? t.costMs + 'ms' : '—';
+
+    if (t.status === 'FAILED') {
+        $('rerankHitPane').innerHTML = `<div class="empty">${escapeHtml(t.errorMsg || '重排失败')}</div>`;
+        $('rerankHitCount').textContent = '失败';
+    }
+}
+
+function renderRerankHits(result) {
+    const selected = result.selected || [];
+    const dropped = result.dropped || [];
+    const pane = $('rerankHitPane');
+
+    if (!selected.length) {
+        $('rerankHitCount').textContent = '无结果';
+        pane.innerHTML = '<div class="empty">没有召回任何内容，检查阶段一是否已入库文档。</div>';
+        return;
+    }
+    $('rerankHitCount').textContent = `选中 ${selected.length} 条`;
+    pane.innerHTML = '';
+    selected.forEach(h => pane.appendChild(buildRerankItem(h, false)));
+
+    const dc = $('droppedCard');
+    const dp = $('droppedPane');
+    if (dropped.length) {
+        dc.style.display = '';
+        dp.innerHTML = '';
+        dropped.forEach(h => dp.appendChild(buildRerankItem(h, true)));
+    } else {
+        dc.style.display = 'none';
+    }
+}
+
+function buildRerankItem(h, isDropped) {
+    const delta = h.rankDelta || 0;
+    const deltaCls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'same';
+    const deltaText = delta > 0 ? '↑' + delta : delta < 0 ? '↓' + (-delta) : '—';
+
+    const div = document.createElement('div');
+    div.className = 'rk-item' + (isDropped ? ' rk-dropped' : '');
+    div.innerHTML = `
+        <div class="rk-head">
+            <span class="hit-rank">${isDropped ? '召回#' + h.recallRank : '#' + h.finalRank}</span>
+            <span class="rk-score">rerank ${Number(h.rerankScore).toFixed(4)}</span>
+            <span class="rk-delta ${deltaCls}" title="召回排名 ${h.recallRank} → 重排排名 ${h.finalRank}">${deltaText}</span>
+            <span class="rk-recall">召回排名 #${h.recallRank}</span>
+        </div>
+        <div class="hit-title">${escapeHtml(h.heading || '（无标题段落）')} · #${h.chunkIndex}</div>
+        <div class="hit-body">${escapeHtml(h.content)}</div>
+        <div class="hit-foot">
+            ${escapeHtml(h.docName || '')} · ${escapeHtml(h.chromaId)} · ${h.charCount} 字
+            · RRF ${Number(h.rrfScore).toFixed(6)}
+            · 向量${h.vecRank > 0 ? '#' + h.vecRank : '—'} / BM25${h.bm25Rank > 0 ? '#' + h.bm25Rank : '—'}
+        </div>
+        ${isDropped ? '<div class="rk-reason">↓ 召回时在 Top-K 内，重排后掉出去了 —— 它原本会被当成最相关喂给大模型</div>' : ''}`;
+
+    div.addEventListener('click', () => {
+        if (h.docId) {
+            openChunkDetail(h.docId, h.chunkIndex);
+        }
+    });
+    return div;
+}
+
+/* 阶段四事件绑定 */
+$('btnRerank').addEventListener('click', doRerank);
+
+$('rerankQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        doRerank();
+    }
+});
+
+/* ------------------------------------------------------------
+   URL 深链（放在文件最末尾）
+   ?stage=2/3/4 [+trace=xxx] 打开对应阶段并回放
+   为什么必须放最后：上面的 state2/state3/state4 都是 const，
+   提前引用会触发暂时性死区（TDZ）报错，整段脚本中断 → 页面空白。
+   ------------------------------------------------------------ */
+const stageParam = params.get('stage');
+if (stageParam === '2' || stageParam === '3' || stageParam === '4') {
+    switchStage(Number(stageParam));
+    const traceParam = params.get('trace');
+    if (traceParam) {
+        if (stageParam === '2') {
+            state2.traceId = traceParam;
+            $('traceCard').style.display = '';
+            $('logTaskId').textContent = 'query ' + traceParam.slice(0, 8);
+            subscribe(traceParam, () => loadTrace(traceParam), `/api/retrieve/${traceParam}/stream`);
+            loadTrace(traceParam);
+        } else if (stageParam === '3') {
+            state3.traceId = traceParam;
+            $('hybridTraceCard').style.display = '';
+            $('logTaskId').textContent = 'hybrid ' + traceParam.slice(0, 8);
+            subscribe(traceParam, () => loadHybrid(traceParam), `/api/hybrid/${traceParam}/stream`);
+            loadHybrid(traceParam);
+        } else {
+            state4.traceId = traceParam;
+            $('rerankTraceCard').style.display = '';
+            $('logTaskId').textContent = 'rerank ' + traceParam.slice(0, 8);
+            subscribe(traceParam, () => loadRerank(traceParam), `/api/rerank/${traceParam}/stream`);
+            loadRerank(traceParam);
+        }
+    }
 }

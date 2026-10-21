@@ -32,7 +32,14 @@ public enum Stage {
     BM25_RECALL("关键词召回", "字面匹配的一路 —— 擅长数字、版本号、专有名词"),
     RRF_FUSE("RRF 融合", "不看分数只看排名：score = Σ 1/(k + rank)"),
     HYBRID_RESULT("融合结果", "按 RRF 分数重排，输出最终 Top-K"),
-    HYBRID_DONE("完成", "把两路明细与融合结果写入 kb_hybrid_trace");
+    HYBRID_DONE("完成", "把两路明细与融合结果写入 kb_hybrid_trace"),
+
+    // ============ 阶段四：重排序 Rerank ============
+    RERANK_RECALL("混合召回", "向量 + BM25 + RRF 先粗筛出候选集 —— 召回阶段宁可多，别漏"),
+    RERANK_SCORE("重排序打分", "交叉编码器把 (query, doc) 拼在一起过模型，逐条打相关性分"),
+    RERANK_REORDER("按分重排", "用重排分取代 RRF 分重新排序，这是精排"),
+    RERANK_RESULT("重排结果", "输出 Top-K，并标注每条在召回时的原始排名"),
+    RERANK_DONE("完成", "写入 kb_rerank_trace");
 
     private final String label;
     private final String description;

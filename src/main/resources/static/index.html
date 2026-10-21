@@ -52,6 +52,13 @@
                 <i>向量 + BM25 双路召回 → RRF 融合</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="4">
+            <span class="st-num">04</span>
+            <span class="st-text">
+                <b>重排序</b>
+                <i>召回 Top-N → 交叉编码器精排 Top-K</i>
+            </span>
+        </button>
         <div class="stage-tip" id="stageTip">阶段一：先把知识灌进向量库</div>
     </nav>
 
@@ -304,6 +311,98 @@
                     ⚠️ RRF 也有副作用：它会给「两路都出现但都排中游」的候选加分，
                     偶尔把不相关的顶上来。如果日志里出现 <code>Top1 在两路里都不靠前</code> 的黄色警告，
                     就是这个情况 —— 那正是阶段四「重排序」要解决的问题。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段四：重排序 ==================== -->
+        <section class="left hidden" id="stage4Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>两段式</span><b>召回 Top-N → 精排 Top-K</b></div>
+                <div class="pi-row"><span>重排模型</span><b id="piRerankModel">gte-rerank-v2</b></div>
+                <div class="pi-row"><span>模型类型</span><b>交叉编码器</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">先粗召回，再让重排模型逐条判断相关性</span>
+                </div>
+                <textarea id="rerankQuery" class="textarea" rows="3"
+                          placeholder="试试：Python 3.10 有什么新特性（回车检索）"></textarea>
+                <div class="hybrid-params two">
+                    <label><span>召回 Top-N</span>
+                        <input type="number" id="recallTopN" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>保留 Top-K</span>
+                        <select id="rerankTopK" class="input">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                </div>
+                <button class="primary" id="btnRerank">
+                    <span class="btn-text">开始重排</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="rerankTraceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 重排概览</h2>
+                    <span class="badge-status" id="rerankStatus">RUNNING</span>
+                </div>
+                <div class="task-stats">
+                    <div><span id="rrRecall">—</span><small>召回候选</small></div>
+                    <div><span id="rrScored">—</span><small>已打分</small></div>
+                    <div><span id="rrTop1">—</span><small>Top1 重排分</small></div>
+                    <div><span id="rrCost">—</span><small>总耗时</small></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · 重排结果</h2>
+                    <span class="hint-inline" id="rerankHitCount">等待检索</span>
+                </div>
+                <div id="rerankHitPane" class="result-pane">
+                    <div class="empty">重排后这里按相关性分排序，每条标注它在召回时的原始排名和升降幅度。</div>
+                </div>
+            </div>
+
+            <div class="card" id="droppedCard" style="display:none">
+                <div class="card-head">
+                    <h2>被挤出的候选</h2>
+                    <span class="hint-inline">召回时在 Top-K 内，重排后掉出去</span>
+                </div>
+                <div id="droppedPane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>这一阶段在学什么</h4>
+                <p>
+                    <b>为什么要两段？</b> 交叉编码器太慢，不可能对全库跑。所以先用便宜的向量 + BM25
+                    从几万条里粗筛出 20 条（召回），再用贵的重排模型逐条精判（精排）。
+                    这就是工业界的标准做法：<code>召回负责「不漏」，精排负责「准」</code>。
+                </p>
+                <p>
+                    <b>双塔 vs 交叉编码器</b>，差别在「query 和 doc 有没有见过面」：
+                </p>
+                <ul>
+                    <li><b>双塔（embedding）</b>：query 编码一次、doc 编码一次，两个向量算距离。
+                        doc 可以离线预算好，所以快 —— 但它俩从没见过面，只能比「整体像不像」。</li>
+                    <li><b>交叉编码器（rerank）</b>：把 query 和 doc <b>拼在一起</b>送进模型，
+                        能看到「python」和「3.10」这两个词是怎么互相作用的。
+                        所以慢，但能分清 3.10 和 3.11。</li>
+                </ul>
+                <p>
+                    <b>重点看「↑N」</b>：一条内容召回时排第 13，重排后升到第 1 —— 这就是重排在做的事。
+                    反过来，标「↓N」的被压下去了，说明它只是「字面沾边」但不是真答案。
+                    如果出现「被挤出的候选」卡片，那些内容原本会被当成最相关喂给大模型。
+                </p>
+                <p class="dim">
+                    实测：问「Python 3.10 有什么新特性」，3.10 那段 rerank <b>0.5287</b>，
+                    3.11 那段只有 <b>0.1857</b> —— 向量检索分不出来的，这里分得清清楚楚。
                 </p>
             </div>
         </section>
