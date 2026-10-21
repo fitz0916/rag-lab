@@ -1,0 +1,84 @@
+server:
+  port: 8080
+  # SSE 长连接需要关闭压缩/缓冲，这里保持默认，靠后端 flush
+
+spring:
+  application:
+    name: rag-lab
+
+  # ------------------------------------------------------------
+  # 读取项目根目录的 .env（按 properties 格式解析）
+  # optional: 前缀 = 文件不存在也不报错，纯靠系统环境变量也能跑
+  # 注意：依赖启动时的工作目录，请在项目根目录启动
+  # ------------------------------------------------------------
+  config:
+    import:
+      - optional:file:./.env[.properties]
+
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/rag_lab?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true
+    username: root
+    password: ${MYSQL_PASSWORD:Root1234}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      pool-name: raglab-pool
+
+  # 启动时自动执行 db/schema.sql（全部 IF NOT EXISTS，可重复执行）
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      continue-on-error: false
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  mvc:
+    async:
+      request-timeout: 1800000
+
+logging:
+  level:
+    root: INFO
+    com.raglab: DEBUG
+
+raglab:
+  embedding:
+    # Qwen（DashScope）OpenAI 兼容模式
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    # 优先 .env 里的 QWEN_API_KEY；没填则回退系统的 DASHSCOPE_API_KEY
+    api-key: ${QWEN_API_KEY:${DASHSCOPE_API_KEY:}}
+    model: ${QWEN_EMBEDDING_MODEL:text-embedding-v4}
+    dimensions: ${QWEN_EMBEDDING_DIMENSIONS:1024}
+    # DashScope 单次请求最多 10 条文本
+    batch-size: 10
+    timeout-seconds: 60
+    max-retries: 2
+
+  chroma:
+    # 你本地 docker-compose 起的 Chroma 实际映射端口
+    base-url: ${CHROMA_BASE_URL:http://127.0.0.1:58019}
+    tenant: default_tenant
+    database: default_database
+    collection: ${CHROMA_COLLECTION:raglab_chunks}
+    timeout-seconds: 60
+    # 写入 Chroma 的批大小
+    write-batch-size: 20
+
+  chunk:
+    # 单片目标字符数（文章建议 200-500 字）
+    size: ${CHUNK_SIZE:500}
+    # 相邻切片重叠字符数
+    overlap: ${CHUNK_OVERLAP:80}
+    # 小于该长度的碎片（非尾块）会被并入上一片
+    min-size: 60
+
+  log:
+    # 运行日志保留天数。<=0 表示永久保留（不推荐，表会一直涨）
+    # 每天 03:30 自动清理，按 created_at 索引走，不会全表扫
+    retention-days: ${LOG_RETENTION_DAYS:30}
