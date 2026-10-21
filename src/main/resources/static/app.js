@@ -782,7 +782,10 @@ function switchStage(n) {
     $('stage6Pane').classList.toggle('hidden', n !== 6);
     $('stage7Pane').classList.toggle('hidden', n !== 7);
     $('stage8Pane').classList.toggle('hidden', n !== 8);
-    $('stageTip').textContent = STAGE_TIPS[n] || '';
+    const tip = $('stageTip');
+    if (tip) {
+        tip.textContent = STAGE_TIPS[n] || '';
+    }
     const badge = $('phaseBadge');
     if (badge) {
         badge.textContent = STAGE_BADGE[n] || '';
@@ -2325,4 +2328,129 @@ if (params.get('stage') === '8') {
         subscribe(rwParam, () => loadRewrite(rwParam), `/api/rewrite/${rwParam}/stream`);
         loadRewrite(rwParam);
     }
+}
+
+/* ============================================================
+   阶段笔记（内容在 notes.js，这里只负责渲染）
+   ------------------------------------------------------------
+   每个阶段底部两张「页」：
+     本阶段做了什么 —— 链路、文件、实测数字、关键决定
+     学习笔记     —— 知识点、运行流程、名词解释、常见坑、动手实验
+   ============================================================ */
+
+function ntSection(title, hint, body) {
+    return `<div class="nt-section">
+        <h4 class="nt-h">${escapeHtml(title)}${hint ? `<small>${escapeHtml(hint)}</small>` : ''}</h4>
+        ${body}
+    </div>`;
+}
+
+function ntFlow(list) {
+    return `<ol class="nt-flow">${list.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ol>`;
+}
+
+function ntFiles(list) {
+    return `<div class="nt-files">${list.map(([n, d]) =>
+        `<div class="fname">${escapeHtml(n)}</div><div class="fdesc">${escapeHtml(d)}</div>`).join('')}</div>`;
+}
+
+function ntMetrics(list) {
+    return `<div class="nt-metrics">${list.map(([k, v]) =>
+        `<div class="nt-metric"><small>${escapeHtml(k)}</small><span>${escapeHtml(v)}</span></div>`).join('')}</div>`;
+}
+
+function ntList(list, cls) {
+    return `<ul class="nt-list ${cls || ''}">${list.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+}
+
+function ntConcepts(list) {
+    return list.map(([t, d]) =>
+        `<div class="nt-concept"><b>${escapeHtml(t)}</b><p>${escapeHtml(d)}</p></div>`).join('');
+}
+
+function ntTerms(list) {
+    return `<div class="nt-terms">${list.map(([t, d]) =>
+        `<div class="tname">${escapeHtml(t)}</div><div class="tdef">${escapeHtml(d)}</div>`).join('')}</div>`;
+}
+
+function buildNotesCard(stageNo, notes) {
+    const card = document.createElement('div');
+    card.className = 'card notes-card';
+    card.id = 'notes-' + stageNo;
+    card.innerHTML = `
+        <div class="card-head">
+            <h2>📓 阶段笔记 · ${escapeHtml(notes.badge)}</h2>
+            <div class="notes-tabs">
+                <button class="tab active" data-note-tab="built">本阶段做了什么</button>
+                <button class="tab" data-note-tab="learn">学习笔记</button>
+            </div>
+        </div>
+        <div class="notes-body" data-note-pane="built"></div>
+        <div class="notes-body hidden" data-note-pane="learn"></div>
+        <p class="hint-inline">这份笔记是开发当时的记录，用来回看「为什么这么设计」，不会随数据自动更新。</p>`;
+
+    const b = notes.built;
+    const l = notes.learn;
+    card.querySelector('[data-note-pane="built"]').innerHTML =
+        `<p class="nt-summary">${escapeHtml(b.summary)}</p>`
+        + ntSection('开发链路', `${b.flow.length} 步`, ntFlow(b.flow))
+        + ntSection('本阶段新增/改动的文件', '', ntFiles(b.files))
+        + ntSection('实测结果', '这台机器、这份语料', ntMetrics(b.metrics))
+        + ntSection('几个关键决定', '都是踩过或想过才定下来的', ntList(b.decisions));
+
+    card.querySelector('[data-note-pane="learn"]').innerHTML =
+        `<p class="nt-summary">${escapeHtml(l.why)}</p>`
+        + ntSection('知识点', `${l.concepts.length} 条`, ntConcepts(l.concepts))
+        + ntSection('运行流程', '数据是怎么流的', ntFlow(l.flow))
+        + ntSection('名词解释', '', ntTerms(l.terms))
+        + ntSection('常见坑', '新手最容易踩的', ntList(l.pitfalls, 'pitfall'))
+        + ntSection('动手实验', '改一个参数，观察变化', ntList(l.labs, 'lab'));
+
+    card.querySelectorAll('.notes-tabs .tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            card.querySelectorAll('.notes-tabs .tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            card.querySelectorAll('[data-note-pane]').forEach(p => {
+                p.classList.toggle('hidden', p.dataset.notePane !== tab.dataset.noteTab);
+            });
+        });
+    });
+    return card;
+}
+
+function renderStageNotes() {
+    if (typeof STAGE_NOTES === 'undefined') {
+        return;
+    }
+    Object.keys(STAGE_NOTES).forEach(k => {
+        const pane = document.getElementById('stage' + k + 'Pane');
+        if (!pane) return;
+        pane.appendChild(buildNotesCard(k, STAGE_NOTES[k]));
+    });
+}
+
+function jumpToNotes() {
+    const n = state.stage || 1;
+    const card = document.getElementById('notes-' + n);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.classList.remove('flash');
+    void card.offsetWidth;   // 强制重排，让动画能重播
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1400);
+}
+
+renderStageNotes();
+$('btnNotes').addEventListener('click', jumpToNotes);
+
+/* 深链：?notes=1 直接跳到当前阶段笔记；?notes=learn 打开「学习笔记」那页 */
+if (params.get('notes')) {
+    setTimeout(() => {
+        jumpToNotes();
+        if (params.get('notes') === 'learn') {
+            const card = document.getElementById('notes-' + (state.stage || 1));
+            const tab = card && card.querySelector('[data-note-tab="learn"]');
+            if (tab) tab.click();
+        }
+    }, 350);
 }
