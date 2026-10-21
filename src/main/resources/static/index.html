@@ -80,6 +80,13 @@
                 <i>上下文 → Prompt → 答案 + 引用依据</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="8">
+            <span class="st-num">08</span>
+            <span class="st-text">
+                <b>查询重写</b>
+                <i>一个问法变三路，融合后再精排</i>
+            </span>
+        </button>
         <div class="stage-tip" id="stageTip">阶段一：先把知识灌进向量库</div>
     </nav>
 
@@ -562,6 +569,7 @@
                             <label class="chk"><input type="checkbox" value="HYBRID" checked><span>HYBRID</span></label>
                             <label class="chk"><input type="checkbox" value="RERANK" checked><span>RERANK</span></label>
                             <label class="chk"><input type="checkbox" value="CONTEXT" checked><span>CONTEXT</span></label>
+                            <label class="chk"><input type="checkbox" value="REWRITE" checked><span>REWRITE</span></label>
                         </div>
                     </div>
                     <div class="ec-nums">
@@ -578,7 +586,8 @@
                     <span class="spinner hidden"></span><span class="btn-text">开始评测</span>
                 </button>
                 <p class="hint-inline" style="margin-top:8px">
-                    12 条用例 × 4 种策略约 20~40 秒。每一步都在右侧日志里，包含每个用例每个策略的排名。
+                    15 条用例 × 5 种策略约 50~70 秒 —— REWRITE 每条都要多调一次大模型。
+                    每一步都在右侧日志里，包含每个用例每个策略的排名。
                 </p>
             </div>
 
@@ -751,6 +760,101 @@
                 <p class="dim">
                     成本口径：prompt_tokens 是大模型真实计费的输入量，和阶段五估算的「字 × 1.5」会有偏差，
                     以这里的真实值为准。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段八：查询重写 ==================== -->
+        <section class="left hidden" id="stage8Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>08 · 换几种问法</h2>
+                    <span class="hint-inline">改写不是向量做的，是让大模型直接生成文本变体</span>
+                </div>
+                <textarea class="input" id="rwQuery" rows="2"
+                          placeholder="试一句口语化的：模型要建多细才够 / 大模型瞎编怎么防"></textarea>
+                <div class="retrieve-bar">
+                    <label>变体数
+                        <select class="input" id="rwVariants">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                    <label>Top-K
+                        <select class="input" id="rwTopK">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label class="chk rw-chk"><input type="checkbox" id="rwRerank" checked><span>融合后重排</span></label>
+                    <button class="primary" id="btnRewrite">
+                        <span class="spinner hidden"></span><span class="btn-text">改写并检索</span>
+                    </button>
+                </div>
+                <p class="hint-inline" style="margin-top:8px">
+                    原查询永远保留在第一位，改写只是补充。每个变体各跑一遍混合检索，再按 RRF 融合。
+                </p>
+            </div>
+
+            <div class="card" id="rwVariantCard" style="display:none">
+                <div class="card-head">
+                    <h2>变体</h2>
+                    <span class="hint-inline" id="rwVariantMeta"></span>
+                </div>
+                <div id="rwVariantPane" class="result-pane"></div>
+                <p class="hint-inline">
+                    「新增」= 这个变体召回、但原查询没召回的条数。全是 0 说明这个变体在说废话。
+                </p>
+            </div>
+
+            <div class="card" id="rwCompareCard" style="display:none">
+                <div class="card-head">
+                    <h2>重写前后对比</h2>
+                    <span class="hint-inline" id="rwCompareMeta"></span>
+                </div>
+                <div id="rwComparePane" class="result-pane"></div>
+            </div>
+
+            <div class="card" id="rwResultCard" style="display:none">
+                <div class="card-head">
+                    <h2>融合结果</h2>
+                    <span class="hint-inline" id="rwResultMeta"></span>
+                </div>
+                <div id="rwHitPane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>这一阶段在学什么（附实测结论）</h4>
+                <p>
+                    <b>改写解决的是「用词不匹配」</b>：用户说「瞎编」「靠不靠谱」，
+                    文档里写「幻觉」「准确性」。BM25 完全匹配不上，向量也只能靠语义近似。
+                    让大模型把同一个问题换几种说法，就能绕过这个鸿沟。
+                </p>
+                <p>
+                    <b>但实测结论是：在这套语料上它没带来提升。</b>
+                    15 条用例里，REWRITE 和 RERANK 的 Hit@1/Hit@3/Hit@5/MRR 几乎一模一样
+                    （66.7% / 86.7% / 100% / 0.797），而每次提问多花约 1.2 秒和 170 tokens。
+                </p>
+                <ul>
+                    <li><b>原因一：</b>语料只有 2 篇文档、1160 片，向量检索本身就够用 ——
+                        文章里也写了「知识库小于 1 万条时改写收益有限」。</li>
+                    <li><b>原因二：</b>我的测试集大多是「文档式提问」，用词本来就和原文重合。
+                        改写只在「口语 vs 文档」鸿沟大时才见效。</li>
+                    <li><b>原因三：</b>融合之后又用原问题做了一次重排，这一步会把变体带进来的
+                        差异重新压回原查询的语义上 —— 两个优化互相抵消。</li>
+                </ul>
+                <p>
+                    <b>所以这一阶段的真正产出不是「更准」，而是「知道自己为什么不该用它」。</b>
+                    没有评测集，你只会看到「加了改写」四个字，然后默认它有用。
+                </p>
+                <p class="dim">
+                    可以自己验证：把「融合后重排」关掉再跑一次 —— 指标会变差（Hit@5 86.7% vs 100%），
+                    说明融合的排序质量不如重排，两者叠加时是重排在兜底。这也解释了为什么
+                    默认配置保留了重排。
                 </p>
             </div>
         </section>

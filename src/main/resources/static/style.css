@@ -2875,3 +2875,172 @@ body {
     background: #e0f2fe;
     color: #0369a1;
 }
+
+/* ============================================================
+   阶段八：查询重写
+   ============================================================ */
+#rwQuery {
+    height: auto;
+    min-height: 60px;
+    padding: 9px 11px;
+    line-height: 1.7;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.rw-chk {
+    height: 38px;
+    align-self: flex-end;
+}
+
+.rw-variant {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 11px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: #fcfcfd;
+}
+
+.rw-variant.original {
+    background: #f5f8ff;
+    border-color: #c7d2fe;
+}
+
+.rw-vno {
+    flex: 0 0 auto;
+    min-width: 46px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: #94a3b8;
+    border-radius: 5px;
+    text-align: center;
+    padding: 2px 5px;
+    line-height: 1.5;
+}
+
+.rw-variant.original .rw-vno {
+    background: #4f46e5;
+}
+
+.rw-vtext {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: #1f2328;
+    line-height: 1.65;
+    word-break: break-word;
+}
+
+.rw-vstat {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #6b7280;
+    text-align: right;
+    line-height: 1.7;
+}
+
+.rw-vstat b {
+    color: #15803d;
+}
+
+.rw-vstat b.zero {
+    color: #b91c1c;
+}
+
+/* 前后对比两列 */
+.rw-cmp {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.rw-cmp-col h5 {
+    margin: 0 0 7px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rw-cmp-item {
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    margin-bottom: 6px;
+    background: #fcfcfd;
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: #374151;
+    word-break: break-word;
+    max-height: 62px;
+    overflow: hidden;
+    position: relative;
+}
+
+.rw-cmp-item.gained {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+
+.rw-cmp-item.lost {
+    border-color: #fecaca;
+    background: #fef2f2;
+    opacity: .75;
+}
+
+.rw-cmp-item .rk2 {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #9aa3af;
+    margin-right: 4px;
+}
+
+/* 多路来源徽章 */
+.from-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #eef2ff;
+    color: #4338ca;
+    margin-right: 3px;
+}
+
+.from-badge.orig {
+    background: #4f46e5;
+    color: #fff;
+}
+
+.hit-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex: 0 0 auto;
+}
+
+.hit-count.multi {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.hit-count.single {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+/* 运行记录：重写类型 */
+.ri-type.rewrite {
+    background: #ede9fe;
+    color: #6d28d9;
+}

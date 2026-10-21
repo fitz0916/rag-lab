@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "raglab")
 public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
                                Log log, Rerank rerank, Context context, Eval eval,
-                               Generate generate) {
+                               Generate generate, Rewrite rewrite) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -100,5 +100,16 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
      */
     public record Generate(String baseUrl, String model, double temperature,
                            int maxTokens, int timeoutSeconds) {
+    }
+
+    /**
+     * 查询重写配置（阶段八）
+     *
+     * @param variants       改写几个变体（不含原查询），建议 2~3：再多收益递减、成本线性涨
+     * @param temperature    改写需要多样性，比问答高；0.7 左右比较合适
+     * @param originalWeight 原查询在跨变体融合里的权重（2 = 原查询的贡献算两份）
+     * @param rerank         融合后是否再过一遍交叉编码器
+     */
+    public record Rewrite(int variants, double temperature, int originalWeight, boolean rerank) {
     }
 }

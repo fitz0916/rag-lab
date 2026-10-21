@@ -61,7 +61,14 @@ public enum Stage {
     GEN_PROMPT("拼装 Prompt", "系统提示 + 带编号的参考资料 + 问题 —— 编号是为了让模型能引用"),
     GEN_CALL("调用大模型", "qwen-plus 生成答案，记录真实 prompt/completion token"),
     GEN_CITE("标注依据", "把答案里的 [n] 对回具体句子，没引用到的不算依据"),
-    GEN_DONE("完成", "写入 kb_generate_trace");
+    GEN_DONE("完成", "写入 kb_generate_trace"),
+
+    // ============ 阶段八：查询重写 ============
+    REWRITE_GEN("生成变体", "调大模型把问题改写成多个表达，覆盖「瞎编→幻觉」这类用词差异"),
+    REWRITE_RECALL("多变体召回", "每个变体各跑一遍混合检索 —— 原查询始终保留，改写只是补充"),
+    REWRITE_MERGE("跨变体融合", "RRF 再看一次排名：被多个变体同时命中的，说明不是偶然"),
+    REWRITE_RERank("融合后重排", "可选：把融合结果再交给交叉编码器精排，压掉「多路都沾边但都不准」的"),
+    REWRITE_DONE("完成", "写入 kb_rewrite_trace");
 
     private final String label;
     private final String description;

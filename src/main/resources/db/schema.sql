@@ -252,3 +252,28 @@ CREATE TABLE IF NOT EXISTS kb_generate_trace
     KEY idx_generate_time (created_at)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4 COMMENT '生成轨迹（阶段七）';
+
+-- ============================================================
+-- 查询重写（阶段八）：一个原始问题 + N 个改写变体，多路召回后融合
+-- 为什么要存每个变体？
+--   因为「重写有没有用」不能只看最终结果。要能看出：
+--   哪个变体真正带来了新召回、哪个变体是废话（和原查询重合 100%）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS kb_rewrite_trace
+(
+    id             VARCHAR(36)   NOT NULL COMMENT '轨迹 id，同时作为 SSE 日志的 task_id',
+    query_text     VARCHAR(1000) NOT NULL COMMENT '用户原始问题',
+    variant_count  INT           NOT NULL DEFAULT 0 COMMENT '实际生成的变体数（不含原查询）',
+    top_k          INT           NOT NULL DEFAULT 5,
+    recall_topn    INT           NOT NULL DEFAULT 20,
+    rerank         TINYINT       NOT NULL DEFAULT 0 COMMENT '融合后是否再过一遍重排',
+    cost_ms        BIGINT        NOT NULL DEFAULT 0,
+    prompt_tokens  INT           NOT NULL DEFAULT 0 COMMENT '改写这一次 LLM 调用的 token',
+    status         VARCHAR(16)   NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED',
+    error_msg      VARCHAR(2000)          DEFAULT NULL,
+    result_json    MEDIUMTEXT             DEFAULT NULL COMMENT '变体 + 每路召回 + 融合明细',
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_rewrite_time (created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '查询重写轨迹（阶段八）';

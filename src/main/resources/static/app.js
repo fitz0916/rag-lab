@@ -51,6 +51,13 @@ const STAGE_LABEL = {
     EVAL_AGGREGATE: '汇总对比',
     EVAL_DONE: '完成',
 
+    // 阶段八：查询重写
+    REWRITE_GEN: '生成变体',
+    REWRITE_RECALL: '多变体召回',
+    REWRITE_MERGE: '跨变体融合',
+    REWRITE_RERank: '融合后重排',
+    REWRITE_DONE: '完成',
+
     // 阶段七：生成
     GEN_CONTEXT: '准备上下文',
     GEN_PROMPT: '拼 Prompt',
@@ -748,7 +755,8 @@ const STAGE_TIPS = {
     4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性',
     5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文',
     6: '阶段六：同一批问题跑所有策略，用 Hit@K / MRR 判断优化到底有没有用',
-    7: '阶段七：把上下文拼进 Prompt，生成带引用的答案 —— 这一步才是用户看到的东西'
+    7: '阶段七：把上下文拼进 Prompt，生成带引用的答案 —— 这一步才是用户看到的东西',
+    8: '阶段八：把问题换几种说法分别检索，再看融合 —— 唯一每次都要多花 LLM 钱的一步'
 };
 
 const STAGE_BADGE = {
@@ -758,7 +766,8 @@ const STAGE_BADGE = {
     4: '阶段四 · 重排序',
     5: '阶段五 · 上下文控制',
     6: '阶段六 · 评测',
-    7: '阶段七 · 生成'
+    7: '阶段七 · 生成',
+    8: '阶段八 · 查询重写'
 };
 
 function switchStage(n) {
@@ -772,6 +781,7 @@ function switchStage(n) {
     $('stage5Pane').classList.toggle('hidden', n !== 5);
     $('stage6Pane').classList.toggle('hidden', n !== 6);
     $('stage7Pane').classList.toggle('hidden', n !== 7);
+    $('stage8Pane').classList.toggle('hidden', n !== 8);
     $('stageTip').textContent = STAGE_TIPS[n] || '';
     const badge = $('phaseBadge');
     if (badge) {
@@ -1156,7 +1166,7 @@ function renderRuns(data) {
 
     const TYPE_LABEL = {
         INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索',
-        RERANK: '重排序', CONTEXT: '上下文', EVAL: '评测', GENERATE: '生成'
+        RERANK: '重排序', CONTEXT: '上下文', EVAL: '评测', GENERATE: '生成', REWRITE: '查询重写'
     };
 
     data.records.forEach(r => {
@@ -1202,6 +1212,8 @@ function jumpToRun(r) {
         location.href = '/?stage=6&run=' + r.id;
     } else if (r.type === 'GENERATE') {
         location.href = '/?stage=7&trace=' + r.id;
+    } else if (r.type === 'REWRITE') {
+        location.href = '/?stage=8&trace=' + r.id;
     }
 }
 
@@ -2133,5 +2145,184 @@ if (params.get('stage') === '7') {
         $('logTaskId').textContent = 'gen ' + genParam.slice(0, 8);
         subscribe(genParam, () => loadGenerate(genParam), `/api/generate/${genParam}/stream`);
         loadGenerate(genParam);
+    }
+}
+
+/* ============================================================
+   阶段八：查询重写
+   ------------------------------------------------------------
+   这一步的价值不在于「看起来更聪明」，而在于「知道它到底值不值」。
+   所以页面必须同时给出：变体是什么、每个变体带来多少新召回、重写前后 Top-K 的差异。
+   ============================================================ */
+const state8 = { traceId: null, busy: false, result: null };
+
+function setBusyRw(busy) {
+    state8.busy = busy;
+    const btn = $('btnRewrite');
+    btn.disabled = busy;
+    btn.querySelector('.spinner').classList.toggle('hidden', !busy);
+    btn.querySelector('.btn-text').textContent = busy ? '改写中…' : '改写并检索';
+}
+
+async function doRewrite() {
+    const query = $('rwQuery').value.trim();
+    if (!query) {
+        $('rwQuery').focus();
+        return;
+    }
+    const payload = {
+        query,
+        variants: Number($('rwVariants').value) || 3,
+        topK: Number($('rwTopK').value) || 5,
+        recallN: 20,
+        rerank: $('rwRerank').checked
+    };
+
+    setBusyRw(true);
+    clearLog();
+    ['rwVariantCard', 'rwCompareCard', 'rwResultCard'].forEach(id => $(id).style.display = 'none');
+
+    try {
+        const res = await fetch('/api/rewrite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json());
+
+        if (!res.ok) {
+            appendLocalError(res.message || '提交失败');
+            setBusyRw(false);
+            return;
+        }
+        const traceId = res.data.traceId;
+        state8.traceId = traceId;
+        $('logTaskId').textContent = 'rewrite ' + traceId.slice(0, 8);
+
+        subscribe(traceId, () => {
+            setBusyRw(false);
+            loadRewrite(traceId);
+        }, `/api/rewrite/${traceId}/stream`);
+
+    } catch (e) {
+        appendLocalError('请求失败：' + e.message);
+        setBusyRw(false);
+    }
+}
+
+async function loadRewrite(traceId) {
+    try {
+        const res = await fetch(`/api/rewrite/${traceId}`).then(r => r.json());
+        if (!res.ok) {
+            appendLocalError(res.message || '读取失败');
+            return;
+        }
+        state8.result = res.data.result;
+        renderRewrite(res.data.trace, res.data.result);
+    } catch (e) {
+        console.warn('读取重写结果失败', e);
+    }
+}
+
+function fromBadges(from) {
+    return (from || []).map(i =>
+        `<span class="from-badge ${i === 0 ? 'orig' : ''}">${i === 0 ? '原' : '变' + i}</span>`
+    ).join('');
+}
+
+function renderRewrite(t, r) {
+    if (!r) return;
+
+    // ---- 变体 ----
+    $('rwVariantCard').style.display = '';
+    $('rwVariantMeta').textContent =
+        `${r.stats.variantCount} 个变体 · 候选 ${r.stats.candidates} 条 · ${t.costMs}ms · 改写 ${t.promptTokens} tokens`;
+
+    let vHtml = `
+        <div class="rw-variant original">
+            <span class="rw-vno">原查询</span>
+            <div class="rw-vtext">${escapeHtml(r.original)}</div>
+            <div class="rw-vstat">排序基准</div>
+        </div>`;
+    (r.variants || []).forEach(v => {
+        vHtml += `
+        <div class="rw-variant">
+            <span class="rw-vno">变体 ${v.index}</span>
+            <div class="rw-vtext">${escapeHtml(v.text)}</div>
+            <div class="rw-vstat">
+                召回 ${v.recallCount}<br>
+                新增 <b class="${v.newHits === 0 ? 'zero' : ''}">${v.newHits}</b>
+            </div>
+        </div>`;
+    });
+    $('rwVariantPane').innerHTML = vHtml;
+
+    // ---- 前后对比 ----
+    $('rwCompareCard').style.display = '';
+    const gained = (r.merged || []).filter(h => h.baselineRank === 0);
+    $('rwCompareMeta').textContent =
+        `新增 ${r.stats.gainedInTopK} 条 · 移出 ${r.stats.lostFromTopK} 条 · ${r.stats.reranked ? '融合后重排' : '仅融合'}`;
+
+    // 只有「被挤出」的才标红、「新进来」的才标绿，两边都有的保持中性
+    const mergedIds = new Set((r.merged || []).map(h => h.chromaId));
+    const baseIds = new Set((r.baseline || []).map(h => h.chromaId));
+    const col = (title, list, cls) => `
+        <div class="rw-cmp-col">
+            <h5>${title}</h5>
+            ${(list || []).map(h => `
+                <div class="rw-cmp-item ${cls(h)}">
+                    <span class="rk2">#${h.rank}</span>${escapeHtml((h.content || '').slice(0, 90))}
+                </div>`).join('') || '<div class="empty">无结果</div>'}
+        </div>`;
+    $('rwComparePane').innerHTML = `<div class="rw-cmp">
+        ${col('重写前（只用原查询）', r.baseline, h => mergedIds.has(h.chromaId) ? '' : 'lost')}
+        ${col('重写后（融合 + 可选重排）', r.merged, h => baseIds.has(h.chromaId) ? '' : 'gained')}
+    </div>
+    <p class="hint-inline">绿色 = 改写新带进来的；红色 = 只用原查询时在 Top-K、改写后被挤出去的（不一定更差）。</p>`;
+
+    // ---- 融合结果 ----
+    $('rwResultCard').style.display = '';
+    $('rwResultMeta').textContent = `${(r.merged || []).length} 条 · 每条标注被几路召回`;
+    const pane = $('rwHitPane');
+    pane.innerHTML = '';
+    (r.merged || []).forEach(h => {
+        const div = document.createElement('div');
+        div.className = 'hit-item';
+        div.innerHTML = `
+            <div class="hit-head">
+                <span class="hit-rank">#${h.rank}</span>
+                <span class="hit-count ${h.hitCount > 1 ? 'multi' : 'single'}">${h.hitCount} 路</span>
+                <span style="flex:1">${fromBadges(h.from)}</span>
+                <span class="hit-meta">${h.rerankScore > 0 ? 'rerank ' + Number(h.rerankScore).toFixed(3) : 'fused ' + Number(h.fusedScore).toFixed(6)}</span>
+            </div>
+            <div class="hit-title">${escapeHtml(h.heading || '（无标题段落）')} · #${h.chunkIndex}</div>
+            <div class="hit-body">${escapeHtml(h.content)}</div>
+            <div class="hit-foot">${escapeHtml(h.docName || '')} · 原查询里排名：${h.baselineRank > 0 ? '#' + h.baselineRank : '未召回'} · 点击看切片解剖</div>`;
+        div.addEventListener('click', () => {
+            if (h.docId) {
+                openChunkDetail(h.docId, h.chunkIndex);
+            }
+        });
+        pane.appendChild(div);
+    });
+}
+
+/* 事件绑定 */
+$('btnRewrite').addEventListener('click', doRewrite);
+$('rwQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        doRewrite();
+    }
+});
+
+/* 深链：?stage=8&trace=<id> */
+if (params.get('stage') === '8') {
+    switchStage(8);
+    const rwParam = params.get('trace');
+    if (rwParam) {
+        state8.traceId = rwParam;
+        $('logTaskId').textContent = 'rewrite ' + rwParam.slice(0, 8);
+        subscribe(rwParam, () => loadRewrite(rwParam), `/api/rewrite/${rwParam}/stream`);
+        loadRewrite(rwParam);
     }
 }

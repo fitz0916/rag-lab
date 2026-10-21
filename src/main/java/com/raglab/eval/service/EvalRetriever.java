@@ -8,6 +8,8 @@ import com.raglab.retrieval.service.Bm25Index;
 import com.raglab.retrieval.service.ContextBuilder;
 import com.raglab.retrieval.service.RerankClient;
 import com.raglab.retrieval.service.SentenceExtractor;
+import com.raglab.rewrite.model.RewriteHit;
+import com.raglab.rewrite.service.MultiQueryRetriever;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -38,7 +40,9 @@ import java.util.function.ToDoubleFunction;
 public class EvalRetriever {
 
     public enum Strategy {
-        VECTOR, HYBRID, RERANK, CONTEXT
+        VECTOR, HYBRID, RERANK, CONTEXT,
+        /** 阶段八：查询重写 + 多路召回 + 跨变体融合（可选重排） */
+        REWRITE
     }
 
     private static final int RRF_K = 60;
@@ -50,16 +54,19 @@ public class EvalRetriever {
     private final RerankClient rerankClient;
     private final SentenceExtractor sentenceExtractor;
     private final ContextBuilder contextBuilder;
+    private final MultiQueryRetriever multiQueryRetriever;
     private final RagLabProperties props;
 
     public EvalRetriever(ChromaClient chromaClient, Bm25Index bm25Index,
                          RerankClient rerankClient, SentenceExtractor sentenceExtractor,
-                         ContextBuilder contextBuilder, RagLabProperties props) {
+                         ContextBuilder contextBuilder, MultiQueryRetriever multiQueryRetriever,
+                         RagLabProperties props) {
         this.chromaClient = chromaClient;
         this.bm25Index = bm25Index;
         this.rerankClient = rerankClient;
         this.sentenceExtractor = sentenceExtractor;
         this.contextBuilder = contextBuilder;
+        this.multiQueryRetriever = multiQueryRetriever;
         this.props = props;
     }
 
@@ -102,6 +109,16 @@ public class EvalRetriever {
                 List<Cand> cands = hybridRecall(query, queryVector, recallTopN, recallTopN);
                 rerank(query, cands);
                 yield toUnits(top(cands, topK), "CHUNK", c -> c.rerankScore);
+            }
+            case REWRITE -> {
+                // 复用阶段八的同一套逻辑，保证「页面看到的」和「评测量到的」是一件事
+                var prepared = multiQueryRetriever.prepareWith(query, props.rewrite().variants(), queryVector);
+                var searched = multiQueryRetriever.search(prepared, recallTopN);
+                var fused = multiQueryRetriever.fuse(searched, Math.max(recallTopN, topK));
+                var merged = props.rewrite().rerank()
+                        ? multiQueryRetriever.rerank(query, fused, topK)
+                        : fused.subList(0, Math.min(topK, fused.size()));
+                yield rewriteUnits(merged);
             }
             default -> List.of();
         };
@@ -275,6 +292,18 @@ public class EvalRetriever {
     }
 
     // ------------------------------------------------------------------
+
+    /** 重写策略的结果转成统一单元：分数优先用重排分，没有就用融合分 */
+    private List<EvalUnit> rewriteUnits(List<RewriteHit> hits) {
+        List<EvalUnit> out = new ArrayList<>(hits.size());
+        int rank = 1;
+        for (RewriteHit h : hits) {
+            double score = h.rerankScore() > 0 ? h.rerankScore() : h.fusedScore();
+            out.add(new EvalUnit(rank++, "CHUNK", h.content(), h.docId(), h.docName(),
+                    h.chunkIndex(), h.heading(), round4(score)));
+        }
+        return out;
+    }
 
     private long parseLong(JsonNode meta, String key) {
         if (meta == null || meta.isNull()) {

@@ -78,6 +78,14 @@ public class ChatClient {
      * @param user   用户消息（资料 + 问题）
      */
     public Result chat(String system, String user) {
+        return chat(system, user, cfg.temperature());
+    }
+
+    /**
+     * 指定 temperature 的版本 —— 查询重写要用高一点的温度（0.7）才能生成多样的表达，
+     * 而 RAG 问答要低温度（0.2）保证忠于资料。同一个客户端，两种用途。
+     */
+    public Result chat(String system, String user, double temperature) {
         if (!hasApiKey()) {
             throw new IllegalStateException(
                     "没有可用的 API Key：把 key 填到 .env 的 QWEN_API_KEY，或设置 DASHSCOPE_API_KEY");
@@ -90,7 +98,7 @@ public class ChatClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.model());
         body.put("messages", messages);
-        body.put("temperature", cfg.temperature());
+        body.put("temperature", temperature);
         body.put("max_tokens", cfg.maxTokens());
 
         long t0 = System.currentTimeMillis();

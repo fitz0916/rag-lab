@@ -30,4 +30,5 @@ public record RunRecord(
     public static final String TYPE_CONTEXT = "CONTEXT";
     public static final String TYPE_EVAL = "EVAL";
     public static final String TYPE_GENERATE = "GENERATE";
+    public static final String TYPE_REWRITE = "REWRITE";
 }

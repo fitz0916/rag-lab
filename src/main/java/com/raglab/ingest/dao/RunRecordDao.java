@@ -64,8 +64,9 @@ public class RunRecordDao {
         boolean context = all || RunRecord.TYPE_CONTEXT.equals(t);
         boolean eval = all || RunRecord.TYPE_EVAL.equals(t);
         boolean generate = all || RunRecord.TYPE_GENERATE.equals(t);
+        boolean rewrite = all || RunRecord.TYPE_REWRITE.equals(t);
 
-        if (!ingest && !retrieve && !hybrid && !rerank && !context && !eval && !generate) {
+        if (!ingest && !retrieve && !hybrid && !rerank && !context && !eval && !generate && !rewrite) {
             return List.of();
         }
 
@@ -167,6 +168,21 @@ public class RunRecordDao {
                                    ' prompt tokens · 引用 ', cited_count) AS summary,
                             error_msg
                        FROM kb_generate_trace
+                      WHERE 1=1 """).append(failCond)
+                    .append("ORDER BY created_at DESC LIMIT ?)");
+            args.add(limit);
+            first = false;
+        }
+        if (rewrite) {
+            if (!first) {
+                sql.append(" UNION ALL ");
+            }
+            sql.append("""
+                    (SELECT 'REWRITE' AS run_type, id, query_text AS title, status, cost_ms, created_at AS ts,
+                            CONCAT(variant_count, ' 变体 · Top-', top_k, ' · ', prompt_tokens,
+                                   ' tokens', IF(rerank = 1, ' · 重排', '')) AS summary,
+                            error_msg
+                       FROM kb_rewrite_trace
                       WHERE 1=1 """).append(failCond)
                     .append("ORDER BY created_at DESC LIMIT ?)");
             args.add(limit);
