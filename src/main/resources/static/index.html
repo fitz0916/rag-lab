@@ -59,6 +59,13 @@
                 <i>召回 Top-N → 交叉编码器精排 Top-K</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="5">
+            <span class="st-num">05</span>
+            <span class="st-text">
+                <b>上下文控制</b>
+                <i>拆句 → 打分 → 去重 → 只留关键句</i>
+            </span>
+        </button>
         <div class="stage-tip" id="stageTip">阶段一：先把知识灌进向量库</div>
     </nav>
 
@@ -406,8 +413,124 @@
                 </p>
             </div>
         </section>
-        </div><!-- /.stage-panes -->
 
+        <!-- ==================== 阶段五：上下文控制 ==================== -->
+        <section class="left hidden" id="stage5Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>链路</span><b>召回 → 重排 → 拆句 → 压缩</b></div>
+                <div class="pi-row"><span>打分策略</span><b id="piCtxStrategy">VECTOR</b></div>
+                <div class="pi-row"><span>输出</span><b>可直接拼进 Prompt</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">只保留真正回答问题的句子</span>
+                </div>
+                <textarea id="ctxQuery" class="textarea" rows="3"
+                          placeholder="试试：数字化交付的模型深度要求（回车生成上下文）"></textarea>
+                <div class="hybrid-params four">
+                    <label><span>召回 Top-N</span>
+                        <input type="number" id="ctxRecall" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>源切片 Top-K</span>
+                        <input type="number" id="ctxTopK" class="input num" value="5" min="1" max="10"></label>
+                    <label><span>打分策略</span>
+                        <select id="ctxStrategy" class="input">
+                            <option value="VECTOR">向量（准）</option>
+                            <option value="KEYWORD">关键词（快）</option>
+                        </select>
+                    </label>
+                    <label><span>字数上限</span>
+                        <input type="number" id="ctxMaxChars" class="input num" value="1200" min="200" max="6000"></label>
+                </div>
+                <button class="primary" id="btnContext">
+                    <span class="btn-text">生成上下文</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="ctxTraceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 压缩效果</h2>
+                    <span class="badge-status" id="ctxStatus">RUNNING</span>
+                </div>
+                <div class="compress-visual">
+                    <div class="cv-side">
+                        <span id="cvOriginChars">—</span>
+                        <small>压缩前（源切片总字数）</small>
+                    </div>
+                    <div class="cv-arrow">→</div>
+                    <div class="cv-side final">
+                        <span id="cvFinalChars">—</span>
+                        <small>压缩后（上下文）</small>
+                    </div>
+                    <div class="cv-ratio">
+                        <b id="cvRatio">—</b>
+                        <small>保留比例</small>
+                    </div>
+                </div>
+                <div class="task-stats">
+                    <div><span id="cvTokens">—</span><small>tokens 估算</small></div>
+                    <div><span id="cvSentences">—</span><small>选中句子</small></div>
+                    <div><span id="cvDedup">—</span><small>去重丢弃</small></div>
+                    <div><span id="cvCost">—</span><small>总耗时</small></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · 最终上下文</h2>
+                    <span class="hint-inline">按原文顺序拼接，可直接复制进 Prompt</span>
+                    <button id="btnCopyCtx" class="mini-btn">复制</button>
+                </div>
+                <pre class="ctx-preview" id="ctxPreview">等待生成…</pre>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>4 · 选中的句子</h2>
+                    <span class="hint-inline" id="ctxSentCount">—</span>
+                </div>
+                <div id="ctxSentencePane" class="result-pane">
+                    <div class="empty">生成后这里按原文顺序列出选中的句子，括号里是它的相关性分。</div>
+                </div>
+            </div>
+
+            <div class="card" id="ctxSourceCard" style="display:none">
+                <div class="card-head">
+                    <h2>源切片贡献</h2>
+                    <span class="hint-inline">每片拆了几句、被选中几句</span>
+                </div>
+                <div id="ctxSourcePane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>这一阶段在学什么</h4>
+                <p>
+                    <b>为什么还要压缩？</b> 前面四个阶段解决了「找到最相关的 5 片」，但 5 片加起来可能 2000 字，
+                    而真正回答问题的往往只有两三句。全塞给大模型 → 贵、噪音多、容易被带偏。
+                </p>
+                <p>
+                    <b>两个细节决定成败：</b>
+                </p>
+                <ul>
+                    <li><b>去重必须有</b>。阶段一加的 overlap 会让相邻切片开头重复 80 字左右，
+                        不去重的话你以为压缩了，其实是把同样的话说了两遍。</li>
+                    <li><b>按原文顺序拼回去</b>。如果按分数从高到低排，句子顺序是跳跃的，
+                        大模型理解起来费劲，人也读不通。</li>
+                </ul>
+                <p>
+                    <b>策略对比可以自己试</b>：把「向量」切成「关键词」再跑一次同样的问题 ——
+                    关键词模式毫秒级完成、不花钱，但你会看到它更容易被高频词带偏。
+                    这就是文章说的「方案 2 更快但粗糙」。
+                </p>
+                <p class="dim">
+                    分数参考：VECTOR 策略是句子与问题的余弦相似度，0.4~0.7 算相关；
+                    KEYWORD 策略是覆盖率加权，绝对值不可比，只看相对排序。
+                </p>
+            </div>
+        </section>
+        </div><!-- /.stage-panes -->
         <!-- ==================== 右：日志黑窗口 ==================== -->        <aside class="log-panel">
             <div class="log-head">
                 <div class="log-title">

@@ -35,7 +35,14 @@ const STAGE_LABEL = {
     RERANK_SCORE: '重排打分',
     RERANK_REORDER: '按分重排',
     RERANK_RESULT: '重排结果',
-    RERANK_DONE: '完成'
+    RERANK_DONE: '完成',
+    // 阶段五：上下文控制
+    CONTEXT_RECALL: '召回重排',
+    CONTEXT_SPLIT: '拆句',
+    CONTEXT_SCORE: '句子打分',
+    CONTEXT_SELECT: '选句去重',
+    CONTEXT_BUILD: '组装上下文',
+    CONTEXT_DONE: '完成'
 };
 
 const state = {
@@ -724,14 +731,16 @@ const STAGE_TIPS = {
     1: '阶段一：先把知识灌进向量库',
     2: '阶段二：把问题变成向量，去库里找最像的几片',
     3: '阶段三：向量 + BM25 两路召回，RRF 融合排名',
-    4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性'
+    4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性',
+    5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文'
 };
 
 const STAGE_BADGE = {
     1: '阶段一 · 切片入库',
     2: '阶段二 · 向量检索',
     3: '阶段三 · 混合检索',
-    4: '阶段四 · 重排序'
+    4: '阶段四 · 重排序',
+    5: '阶段五 · 上下文控制'
 };
 
 function switchStage(n) {
@@ -742,6 +751,7 @@ function switchStage(n) {
     $('stage2Pane').classList.toggle('hidden', n !== 2);
     $('stage3Pane').classList.toggle('hidden', n !== 3);
     $('stage4Pane').classList.toggle('hidden', n !== 4);
+    $('stage5Pane').classList.toggle('hidden', n !== 5);
     $('stageTip').textContent = STAGE_TIPS[n] || '';
     const badge = $('phaseBadge');
     if (badge) {
@@ -1124,7 +1134,7 @@ function renderRuns(data) {
     }
     body.innerHTML = '';
 
-    const TYPE_LABEL = { INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索', RERANK: '重排序' };
+    const TYPE_LABEL = { INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索', RERANK: '重排序', CONTEXT: '上下文' };
 
     data.records.forEach(r => {
         const label = TYPE_LABEL[r.type] || r.type;
@@ -1163,6 +1173,8 @@ function jumpToRun(r) {
         location.href = '/?stage=3&trace=' + r.id;
     } else if (r.type === 'RERANK') {
         location.href = '/?stage=4&trace=' + r.id;
+    } else if (r.type === 'CONTEXT') {
+        location.href = '/?stage=5&trace=' + r.id;
     }
 }
 
@@ -1347,14 +1359,190 @@ $('rerankQuery').addEventListener('keydown', e => {
     }
 });
 
+/* ============================================================
+   阶段五：上下文控制
+   ============================================================ */
+const state5 = { traceId: null, busy: false };
+
+function setBusyContext(busy) {
+    state5.busy = busy;
+    const btn = $('btnContext');
+    btn.disabled = busy;
+    btn.querySelector('.spinner').classList.toggle('hidden', !busy);
+    btn.querySelector('.btn-text').textContent = busy ? '生成中…' : '生成上下文';
+}
+
+async function doContext() {
+    const query = $('ctxQuery').value.trim();
+    if (!query) {
+        $('ctxQuery').focus();
+        return;
+    }
+    const payload = {
+        query,
+        recallTopN: Number($('ctxRecall').value) || 20,
+        topK: Number($('ctxTopK').value) || 5,
+        strategy: $('ctxStrategy').value,
+        maxChars: Number($('ctxMaxChars').value) || 1200
+    };
+
+    setBusyContext(true);
+    clearLog();
+    $('ctxTraceCard').style.display = '';
+    $('ctxStatus').textContent = 'RUNNING';
+    $('ctxStatus').className = 'badge-status';
+    $('ctxPreview').textContent = '生成中…';
+    $('ctxSentencePane').innerHTML = '<div class="empty">正在召回、重排、拆句打分…</div>';
+    $('ctxSourceCard').style.display = 'none';
+
+    try {
+        const res = await fetch('/api/context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json());
+
+        if (!res.ok) {
+            appendLocalError(res.message || '提交失败');
+            setBusyContext(false);
+            return;
+        }
+        const traceId = res.data.traceId;
+        state5.traceId = traceId;
+        $('logTaskId').textContent = 'context ' + traceId.slice(0, 8);
+
+        subscribe(traceId, () => {
+            setBusyContext(false);
+            loadContext(traceId);
+        }, `/api/context/${traceId}/stream`);
+
+    } catch (e) {
+        appendLocalError('请求失败：' + e.message);
+        setBusyContext(false);
+    }
+}
+
+async function loadContext(traceId) {
+    try {
+        const res = await fetch(`/api/context/${traceId}`).then(r => r.json());
+        if (!res.ok) {
+            $('ctxPreview').textContent = res.message || '读取失败';
+            return;
+        }
+        renderContextTrace(res.data.trace, res.data.result);
+        renderContextResult(res.data.result);
+    } catch (e) {
+        console.warn('读取上下文结果失败', e);
+    }
+}
+
+function renderContextTrace(t, r) {
+    const badge = $('ctxStatus');
+    badge.textContent = t.status;
+    badge.className = 'badge-status' + (t.status === 'SUCCESS' ? ' success' : t.status === 'FAILED' ? ' failed' : '');
+
+    const st = r.stats || {};
+    $('cvOriginChars').textContent = (st.originChars || 0).toLocaleString();
+    $('cvFinalChars').textContent = (st.finalChars || 0).toLocaleString();
+    $('cvRatio').textContent = st.compressRatio != null
+        ? (Number(st.compressRatio) * 100).toFixed(1) + '%' : '—';
+    $('cvTokens').textContent = `${st.originTokens || 0} → ${st.finalTokens || 0}`;
+    $('cvSentences').textContent = st.selectedSentences || 0;
+    $('cvDedup').textContent = st.droppedDuplicates || 0;
+    $('cvCost').textContent = t.costMs ? t.costMs + 'ms' : '—';
+    $('piCtxStrategy').textContent = t.strategy || 'VECTOR';
+
+    if (t.status === 'FAILED') {
+        $('ctxPreview').textContent = t.errorMsg || '生成失败';
+        $('ctxSentencePane').innerHTML = `<div class="empty">${escapeHtml(t.errorMsg || '生成失败')}</div>`;
+    }
+}
+
+function renderContextResult(r) {
+    const sentences = r.sentences || [];
+    const sources = r.sources || [];
+
+    $('ctxPreview').textContent = r.context || '（空）';
+
+    const pane = $('ctxSentencePane');
+    $('ctxSentCount').textContent = `共 ${sentences.length} 句`;
+    pane.innerHTML = '';
+    if (!sentences.length) {
+        pane.innerHTML = '<div class="empty">没有选中任何句子</div>';
+    }
+    sentences.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'sen-item';
+        div.innerHTML = `
+            <span class="sen-order">#${s.order}</span>
+            <div class="sen-body">
+                <div class="sen-text">${escapeHtml(s.text)}</div>
+                <div class="sen-meta">${escapeHtml(s.heading || '无标题')} · 切片#${s.chunkIndex} · 源片#${s.sourceRank} · ${s.charCount} 字</div>
+            </div>
+            <span class="sen-score">${Number(s.score).toFixed(4)}</span>`;
+        div.addEventListener('click', () => {
+            if (s.docId) {
+                openChunkDetail(s.docId, s.chunkIndex);
+            }
+        });
+        pane.appendChild(div);
+    });
+
+    // 源切片贡献
+    if (sources.length) {
+        $('ctxSourceCard').style.display = '';
+        const sp = $('ctxSourcePane');
+        sp.innerHTML = '';
+        const maxSent = Math.max(...sources.map(s => s.sentenceCount), 1);
+        sources.forEach(s => {
+            const pct = Math.round((s.selectedCount / maxSent) * 100);
+            const row = document.createElement('div');
+            row.className = 'src-row';
+            row.innerHTML = `
+                <span class="src-idx">#${s.rank}</span>
+                <span class="src-name" title="${escapeAttr(s.content || '')}">
+                    ${escapeHtml(s.heading || '无标题')} · 切片#${s.chunkIndex} · ${s.charCount} 字
+                </span>
+                <div class="src-bar"><div style="width:${pct}%"></div></div>
+                <span class="src-cnt">${s.selectedCount}/${s.sentenceCount} 句</span>`;
+            row.title = s.content || '';
+            sp.appendChild(row);
+        });
+    }
+}
+
+/* 阶段五事件绑定 */
+$('btnContext').addEventListener('click', doContext);
+
+$('ctxQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        doContext();
+    }
+});
+
+$('btnCopyCtx').addEventListener('click', async () => {
+    const text = $('ctxPreview').textContent;
+    if (!text || text === '等待生成…' || text === '生成中…') {
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(text);
+        $('btnCopyCtx').textContent = '✓ 已复制';
+        setTimeout(() => $('btnCopyCtx').textContent = '复制', 1500);
+    } catch (e) {
+        alert('复制失败，请手动选中');
+    }
+});
+
 /* ------------------------------------------------------------
    URL 深链（放在文件最末尾）
-   ?stage=2/3/4 [+trace=xxx] 打开对应阶段并回放
-   为什么必须放最后：上面的 state2/state3/state4 都是 const，
+   ?stage=2/3/4/5 [+trace=xxx] 打开对应阶段并回放
+   为什么必须放最后：上面的 state2~state5 都是 const，
    提前引用会触发暂时性死区（TDZ）报错，整段脚本中断 → 页面空白。
    ------------------------------------------------------------ */
 const stageParam = params.get('stage');
-if (stageParam === '2' || stageParam === '3' || stageParam === '4') {
+if (['2', '3', '4', '5'].includes(stageParam)) {
     switchStage(Number(stageParam));
     const traceParam = params.get('trace');
     if (traceParam) {
@@ -1370,12 +1558,18 @@ if (stageParam === '2' || stageParam === '3' || stageParam === '4') {
             $('logTaskId').textContent = 'hybrid ' + traceParam.slice(0, 8);
             subscribe(traceParam, () => loadHybrid(traceParam), `/api/hybrid/${traceParam}/stream`);
             loadHybrid(traceParam);
-        } else {
+        } else if (stageParam === '4') {
             state4.traceId = traceParam;
             $('rerankTraceCard').style.display = '';
             $('logTaskId').textContent = 'rerank ' + traceParam.slice(0, 8);
             subscribe(traceParam, () => loadRerank(traceParam), `/api/rerank/${traceParam}/stream`);
             loadRerank(traceParam);
+        } else {
+            state5.traceId = traceParam;
+            $('ctxTraceCard').style.display = '';
+            $('logTaskId').textContent = 'context ' + traceParam.slice(0, 8);
+            subscribe(traceParam, () => loadContext(traceParam), `/api/context/${traceParam}/stream`);
+            loadContext(traceParam);
         }
     }
 }

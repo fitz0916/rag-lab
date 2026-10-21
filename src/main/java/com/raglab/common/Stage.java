@@ -39,7 +39,15 @@ public enum Stage {
     RERANK_SCORE("重排序打分", "交叉编码器把 (query, doc) 拼在一起过模型，逐条打相关性分"),
     RERANK_REORDER("按分重排", "用重排分取代 RRF 分重新排序，这是精排"),
     RERANK_RESULT("重排结果", "输出 Top-K，并标注每条在召回时的原始排名"),
-    RERANK_DONE("完成", "写入 kb_rerank_trace");
+    RERANK_DONE("完成", "写入 kb_rerank_trace"),
+
+    // ============ 阶段五：上下文控制 ============
+    CONTEXT_RECALL("召回+重排", "先拿到最相关的 K 片 —— 复用阶段四的两段式检索"),
+    CONTEXT_SPLIT("拆句", "把每个切片拆成句子 —— 句子才是检索的最小语义单位"),
+    CONTEXT_SCORE("句子打分", "每句单独和问题算相似度（向量 or 关键词密度）"),
+    CONTEXT_SELECT("选句去重", "选最相关的 N 句；相似度过高的只留一条（overlap 会造成重复）"),
+    CONTEXT_BUILD("组装上下文", "按原文顺序拼接，按字数上限截断 —— 顺序乱了读起来就不通顺"),
+    CONTEXT_DONE("完成", "写入 kb_context_trace");
 
     private final String label;
     private final String description;

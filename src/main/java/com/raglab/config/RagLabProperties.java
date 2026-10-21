@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 全部可调参数集中在这里，改 application.yml 即可，不用动代码。
  */
 @ConfigurationProperties(prefix = "raglab")
-public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk, Log log, Rerank rerank) {
+public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
+                               Log log, Rerank rerank, Context context) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -66,5 +67,16 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk, 
         public String endpoint() {
             return "/api/v1/services/rerank/text-rerank/text-rerank";
         }
+    }
+
+    /**
+     * 上下文控制配置（阶段五）
+     *
+     * @param strategy             VECTOR（句子级向量，准但慢） / KEYWORD（关键词密度，快但粗）
+     * @param maxSentencesPerChunk 每个切片最多贡献几句，防止某一片把所有名额占满
+     * @param maxChars             最终上下文长度上限
+     * @param dedupThreshold       两句相似度超过这个值只留一条（overlap 会导致相邻切片重复）
+     */
+    public record Context(String strategy, int maxSentencesPerChunk, int maxChars, double dedupThreshold) {
     }
 }

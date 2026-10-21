@@ -2033,3 +2033,219 @@ body {
     background: #f3e8ff;
     color: #7e22ce;
 }
+
+/* ============================================================
+   阶段五：上下文控制
+   ============================================================ */
+.compress-visual {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    border: 1px solid #e0e7ff;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.cv-side {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cv-side span {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: #475569;
+    line-height: 1.1;
+}
+
+.cv-side.final span {
+    color: #16a34a;
+}
+
+.cv-side small {
+    font-size: 10.5px;
+    color: var(--muted);
+}
+
+.cv-arrow {
+    font-size: 20px;
+    color: #94a3b8;
+}
+
+.cv-ratio {
+    margin-left: auto;
+    text-align: right;
+}
+
+.cv-ratio b {
+    font-family: var(--mono);
+    font-size: 24px;
+    color: #4f46e5;
+    line-height: 1.1;
+}
+
+.cv-ratio small {
+    display: block;
+    font-size: 10.5px;
+    color: var(--muted);
+}
+
+.ctx-preview {
+    margin: 0;
+    padding: 12px 14px;
+    background: #0d1117;
+    border-radius: 9px;
+    color: #c9d1d9;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.85;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 340px;
+    overflow: auto;
+}
+
+.mini-btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    font-size: 11px;
+    padding: 3px 9px;
+    cursor: pointer;
+    font-family: inherit;
+    color: var(--muted);
+    transition: .13s;
+}
+
+.mini-btn:hover {
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+    background: #f8faff;
+}
+
+/* 选中的句子 */
+.sen-item {
+    display: flex;
+    gap: 9px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: #fcfcfd;
+    cursor: pointer;
+    transition: .13s;
+}
+
+.sen-item:hover {
+    border-color: #bfdbfe;
+    background: #f8faff;
+}
+
+.sen-order {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #fff;
+    background: #6366f1;
+    padding: 1px 6px;
+    border-radius: 4px;
+    height: fit-content;
+    line-height: 1.6;
+}
+
+.sen-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.sen-text {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #374151;
+    word-break: break-word;
+}
+
+.sen-meta {
+    margin-top: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #9aa3af;
+}
+
+.sen-score {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #0f766e;
+    align-self: flex-start;
+    padding-top: 2px;
+}
+
+/* 源切片贡献 */
+.src-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 4px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 11.5px;
+}
+
+.src-row:last-child {
+    border-bottom: 0;
+}
+
+.src-idx {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #fff;
+    background: #94a3b8;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.src-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    color: #4b5563;
+}
+
+.src-bar {
+    flex: 0 0 70px;
+    height: 6px;
+    background: #eef1f4;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.src-bar > div {
+    height: 100%;
+    background: #6366f1;
+    border-radius: 3px;
+}
+
+.src-cnt {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #7c3aed;
+    width: 64px;
+    text-align: right;
+}
+
+/* 运行记录：阶段五类型徽章 */
+.ri-type.context {
+    background: #ccfbf1;
+    color: #0f766e;
+}

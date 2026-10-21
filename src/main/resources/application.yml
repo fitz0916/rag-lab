@@ -91,3 +91,14 @@ raglab:
     timeout-seconds: 60
     # 单次送给重排模型的候选上限，太多会超 token 限制
     max-documents: 50
+
+  context:
+    # VECTOR = 句子级向量检索（准，要额外调 embedding）
+    # KEYWORD = 关键词密度（快，不花钱，但粗糙）
+    strategy: ${CONTEXT_STRATEGY:VECTOR}
+    # 每个切片最多贡献几句，防止某一片把所有名额占满
+    max-sentences-per-chunk: 4
+    # 最终上下文长度上限（中文 1 字约 0.7 token，1200 字约 840 token）
+    max-chars: 1200
+    # 两句相似度超过这个值只留一条（阶段一的 overlap 会让相邻切片重复）
+    dedup-threshold: 0.85

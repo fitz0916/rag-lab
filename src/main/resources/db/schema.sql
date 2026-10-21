@@ -143,3 +143,25 @@ CREATE TABLE IF NOT EXISTS kb_rerank_trace
     KEY idx_rerank_time (created_at)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4 COMMENT '重排序轨迹（阶段四）';
+
+-- 上下文轨迹：阶段五，记录压缩前后的规模与选中的句子
+CREATE TABLE IF NOT EXISTS kb_context_trace
+(
+    id             VARCHAR(36)   NOT NULL COMMENT '轨迹 id，同时作为 SSE 日志的 task_id',
+    query_text     VARCHAR(1000) NOT NULL,
+    recall_topk    INT           NOT NULL DEFAULT 5 COMMENT '重排后取几片作为句子来源',
+    strategy       VARCHAR(16)   NOT NULL COMMENT 'VECTOR / KEYWORD',
+    max_chars      INT           NOT NULL DEFAULT 1200 COMMENT '上下文长度上限',
+    origin_chars   INT           NOT NULL DEFAULT 0 COMMENT '压缩前总字数',
+    final_chars    INT           NOT NULL DEFAULT 0 COMMENT '压缩后字数',
+    sentence_count INT           NOT NULL DEFAULT 0 COMMENT '选中的句子数',
+    compress_ratio DOUBLE                 DEFAULT NULL COMMENT '压缩率 = final/origin',
+    cost_ms        BIGINT        NOT NULL DEFAULT 0,
+    status         VARCHAR(16)   NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED',
+    error_msg      VARCHAR(2000)          DEFAULT NULL,
+    result_json    MEDIUMTEXT             DEFAULT NULL COMMENT '源切片 + 选中句子 + 最终上下文',
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_context_time (created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '上下文轨迹（阶段五）';

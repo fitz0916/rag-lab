@@ -61,8 +61,9 @@ public class RunRecordDao {
         boolean retrieve = all || RunRecord.TYPE_RETRIEVE.equals(t);
         boolean hybrid = all || RunRecord.TYPE_HYBRID.equals(t);
         boolean rerank = all || RunRecord.TYPE_RERANK.equals(t);
+        boolean context = all || RunRecord.TYPE_CONTEXT.equals(t);
 
-        if (!ingest && !retrieve && !hybrid && !rerank) {
+        if (!ingest && !retrieve && !hybrid && !rerank && !context) {
             return List.of();
         }
 
@@ -119,6 +120,20 @@ public class RunRecordDao {
                             CONCAT('召回 Top-', recall_topn, ' → 重排 Top-', final_topk, ' · 命中 ', hit_count) AS summary,
                             error_msg
                        FROM kb_rerank_trace
+                      WHERE 1=1 """).append(failCond)
+                    .append("ORDER BY created_at DESC LIMIT ?)");
+            args.add(limit);
+            first = false;
+        }
+        if (context) {
+            if (!first) {
+                sql.append(" UNION ALL ");
+            }
+            sql.append("""
+                    (SELECT 'CONTEXT' AS run_type, id, query_text AS title, status, cost_ms, created_at AS ts,
+                            CONCAT(origin_chars, ' 字 → ', final_chars, ' 字 · ', sentence_count, ' 句 · ', strategy) AS summary,
+                            error_msg
+                       FROM kb_context_trace
                       WHERE 1=1 """).append(failCond)
                     .append("ORDER BY created_at DESC LIMIT ?)");
             args.add(limit);
