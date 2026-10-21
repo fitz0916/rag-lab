@@ -7,7 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "raglab")
 public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
-                               Log log, Rerank rerank, Context context, Eval eval) {
+                               Log log, Rerank rerank, Context context, Eval eval,
+                               Generate generate) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -88,5 +89,16 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
      * @param strategies 默认评测哪几种策略，逗号分隔
      */
     public record Eval(int topK, int recallTopN, String strategies) {
+    }
+
+    /**
+     * 生成配置（阶段七）—— 走 DashScope 的 OpenAI 兼容接口，
+     * 和 embedding 同一个 baseUrl、同一个 Key，换 model 名即可。
+     *
+     * @param temperature 0~1，RAG 问答建议 0~0.3：要的是忠于资料，不是发挥
+     * @param maxTokens   答案长度上限，太大容易让模型开始编
+     */
+    public record Generate(String baseUrl, String model, double temperature,
+                           int maxTokens, int timeoutSeconds) {
     }
 }

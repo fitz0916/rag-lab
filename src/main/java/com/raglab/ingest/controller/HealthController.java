@@ -48,7 +48,9 @@ public class HealthController {
                 "embeddingModel", props.embedding().model(),
                 "dimensions", props.embedding().dimensions(),
                 "chunkSize", props.chunk().size(),
-                "chunkOverlap", props.chunk().overlap()
+                "chunkOverlap", props.chunk().overlap(),
+                "generateModel", props.generate() == null ? "" : props.generate().model(),
+                "rerankModel", props.rerank() == null ? "" : props.rerank().model()
         ));
         return ApiResponse.ok(out);
     }

@@ -223,3 +223,32 @@ CREATE TABLE IF NOT EXISTS kb_eval_detail
     KEY idx_eval_detail_case (case_id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4 COMMENT '评测明细（阶段六）';
+
+-- ============================================================
+-- 生成（阶段七）：把压缩后的上下文拼进 Prompt，调大模型出答案
+-- 为什么要记 token 数和 prompt 原文？
+--   因为生成阶段的成本几乎全在 prompt 长度上。只记「成功了」没有意义，
+--   要能回答「这次比上次多花了几倍 token、多出来的是不是有用」。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS kb_generate_trace
+(
+    id                VARCHAR(36)   NOT NULL COMMENT '轨迹 id，同时作为 SSE 日志的 task_id',
+    query_text        VARCHAR(1000) NOT NULL,
+    model             VARCHAR(64)   NOT NULL,
+    source_chunks     INT           NOT NULL DEFAULT 0 COMMENT '用了几个源切片',
+    sentence_count    INT           NOT NULL DEFAULT 0 COMMENT '上下文里有几句',
+    context_chars     INT           NOT NULL DEFAULT 0,
+    prompt_chars      INT           NOT NULL DEFAULT 0,
+    answer_chars      INT           NOT NULL DEFAULT 0,
+    prompt_tokens     INT           NOT NULL DEFAULT 0 COMMENT '大模型实际计费的输入 token',
+    completion_tokens INT           NOT NULL DEFAULT 0,
+    cited_count       INT           NOT NULL DEFAULT 0 COMMENT '答案里引用了几个依据',
+    cost_ms           BIGINT        NOT NULL DEFAULT 0,
+    status            VARCHAR(16)   NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED',
+    error_msg         VARCHAR(2000)          DEFAULT NULL,
+    result_json       MEDIUMTEXT             DEFAULT NULL COMMENT '答案 + 依据 + prompt 原文',
+    created_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_generate_time (created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4 COMMENT '生成轨迹（阶段七）';

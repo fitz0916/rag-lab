@@ -63,8 +63,9 @@ public class RunRecordDao {
         boolean rerank = all || RunRecord.TYPE_RERANK.equals(t);
         boolean context = all || RunRecord.TYPE_CONTEXT.equals(t);
         boolean eval = all || RunRecord.TYPE_EVAL.equals(t);
+        boolean generate = all || RunRecord.TYPE_GENERATE.equals(t);
 
-        if (!ingest && !retrieve && !hybrid && !rerank && !context && !eval) {
+        if (!ingest && !retrieve && !hybrid && !rerank && !context && !eval && !generate) {
             return List.of();
         }
 
@@ -151,6 +152,21 @@ public class RunRecordDao {
                                    LENGTH(strategies) - LENGTH(REPLACE(strategies, ',', '')) + 1, ' 策略') AS summary,
                             error_msg
                        FROM kb_eval_run
+                      WHERE 1=1 """).append(failCond)
+                    .append("ORDER BY created_at DESC LIMIT ?)");
+            args.add(limit);
+            first = false;
+        }
+        if (generate) {
+            if (!first) {
+                sql.append(" UNION ALL ");
+            }
+            sql.append("""
+                    (SELECT 'GENERATE' AS run_type, id, query_text AS title, status, cost_ms, created_at AS ts,
+                            CONCAT(source_chunks, ' 片 → ', sentence_count, ' 句 · ', prompt_tokens,
+                                   ' prompt tokens · 引用 ', cited_count) AS summary,
+                            error_msg
+                       FROM kb_generate_trace
                       WHERE 1=1 """).append(failCond)
                     .append("ORDER BY created_at DESC LIMIT ?)");
             args.add(limit);

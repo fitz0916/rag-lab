@@ -111,3 +111,13 @@ raglab:
     recall-topn: ${EVAL_RECALL_TOPN:20}
     # 默认评测的策略组合
     strategies: ${EVAL_STRATEGIES:VECTOR,HYBRID,RERANK,CONTEXT}
+
+  # ============ 阶段七：生成 ============
+  generate:
+    # 和 embedding 同一个兼容端点，只是换 model 名
+    base-url: ${GENERATE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    model: ${GENERATE_MODEL:qwen-plus}
+    # RAG 问答要的是忠于资料，不是发挥。0 太死板，0.2 比较稳
+    temperature: ${GENERATE_TEMPERATURE:0.2}
+    max-tokens: ${GENERATE_MAX_TOKENS:1200}
+    timeout-seconds: 90

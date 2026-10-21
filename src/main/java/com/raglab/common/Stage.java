@@ -54,7 +54,14 @@ public enum Stage {
     EVAL_CASE("逐用例检索", "同一个问题分别跑多种策略 —— 只有同题对比才说明问题"),
     EVAL_SCORE("计算指标", "Hit@1 / Hit@3 / Hit@K、MRR、关键词覆盖率"),
     EVAL_AGGREGATE("汇总对比", "按策略聚合，看谁在哪类问题上更强、代价多少"),
-    EVAL_DONE("完成", "写入 kb_eval_run / kb_eval_detail");
+    EVAL_DONE("完成", "写入 kb_eval_run / kb_eval_detail"),
+
+    // ============ 阶段七：生成 ============
+    GEN_CONTEXT("准备上下文", "复用阶段四/五：召回 + 重排 + 句子级压缩，得到可直接拼进 Prompt 的内容"),
+    GEN_PROMPT("拼装 Prompt", "系统提示 + 带编号的参考资料 + 问题 —— 编号是为了让模型能引用"),
+    GEN_CALL("调用大模型", "qwen-plus 生成答案，记录真实 prompt/completion token"),
+    GEN_CITE("标注依据", "把答案里的 [n] 对回具体句子，没引用到的不算依据"),
+    GEN_DONE("完成", "写入 kb_generate_trace");
 
     private final String label;
     private final String description;

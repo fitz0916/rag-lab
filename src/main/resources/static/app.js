@@ -42,7 +42,21 @@ const STAGE_LABEL = {
     CONTEXT_SCORE: '句子打分',
     CONTEXT_SELECT: '选句去重',
     CONTEXT_BUILD: '组装上下文',
-    CONTEXT_DONE: '完成'
+    CONTEXT_DONE: '完成',
+
+    // 阶段六：评测
+    EVAL_LOAD: '载入测试集',
+    EVAL_CASE: '逐用例检索',
+    EVAL_SCORE: '计算指标',
+    EVAL_AGGREGATE: '汇总对比',
+    EVAL_DONE: '完成',
+
+    // 阶段七：生成
+    GEN_CONTEXT: '准备上下文',
+    GEN_PROMPT: '拼 Prompt',
+    GEN_CALL: '调大模型',
+    GEN_CITE: '标注依据',
+    GEN_DONE: '完成'
 };
 
 const state = {
@@ -733,7 +747,8 @@ const STAGE_TIPS = {
     3: '阶段三：向量 + BM25 两路召回，RRF 融合排名',
     4: '阶段四：召回 Top-N，再让重排模型逐条判断相关性',
     5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文',
-    6: '阶段六：同一批问题跑所有策略，用 Hit@K / MRR 判断优化到底有没有用'
+    6: '阶段六：同一批问题跑所有策略，用 Hit@K / MRR 判断优化到底有没有用',
+    7: '阶段七：把上下文拼进 Prompt，生成带引用的答案 —— 这一步才是用户看到的东西'
 };
 
 const STAGE_BADGE = {
@@ -742,7 +757,8 @@ const STAGE_BADGE = {
     3: '阶段三 · 混合检索',
     4: '阶段四 · 重排序',
     5: '阶段五 · 上下文控制',
-    6: '阶段六 · 评测'
+    6: '阶段六 · 评测',
+    7: '阶段七 · 生成'
 };
 
 function switchStage(n) {
@@ -755,6 +771,7 @@ function switchStage(n) {
     $('stage4Pane').classList.toggle('hidden', n !== 4);
     $('stage5Pane').classList.toggle('hidden', n !== 5);
     $('stage6Pane').classList.toggle('hidden', n !== 6);
+    $('stage7Pane').classList.toggle('hidden', n !== 7);
     $('stageTip').textContent = STAGE_TIPS[n] || '';
     const badge = $('phaseBadge');
     if (badge) {
@@ -1139,7 +1156,7 @@ function renderRuns(data) {
 
     const TYPE_LABEL = {
         INGEST: '入库', RETRIEVE: '向量检索', HYBRID: '混合检索',
-        RERANK: '重排序', CONTEXT: '上下文', EVAL: '评测'
+        RERANK: '重排序', CONTEXT: '上下文', EVAL: '评测', GENERATE: '生成'
     };
 
     data.records.forEach(r => {
@@ -1183,6 +1200,8 @@ function jumpToRun(r) {
         location.href = '/?stage=5&trace=' + r.id;
     } else if (r.type === 'EVAL') {
         location.href = '/?stage=6&run=' + r.id;
+    } else if (r.type === 'GENERATE') {
+        location.href = '/?stage=7&trace=' + r.id;
     }
 }
 
@@ -1894,5 +1913,225 @@ if (params.get('stage') === '6') {
         $('logTaskId').textContent = 'eval ' + runParam.slice(0, 8);
         subscribe(runParam, () => loadEval(runParam), `/api/eval/${runParam}/stream`);
         loadEval(runParam);
+    }
+}
+
+/* ============================================================
+   阶段七：生成
+   ------------------------------------------------------------
+   检索的质量在这里变成用户能读到的答案。
+   这一阶段唯一不能省的是「引用」：没有引用的答案，无法判断是资料来的还是编的。
+   ============================================================ */
+const state7 = { traceId: null, busy: false, result: null, promptTab: 'user' };
+
+function setBusyGen(busy) {
+    state7.busy = busy;
+    const btn = $('btnGenerate');
+    btn.disabled = busy;
+    btn.querySelector('.spinner').classList.toggle('hidden', !busy);
+    btn.querySelector('.btn-text').textContent = busy ? '生成中…' : '生成答案';
+}
+
+async function doGenerate() {
+    const query = $('genQuery').value.trim();
+    if (!query) {
+        $('genQuery').focus();
+        return;
+    }
+    const payload = {
+        query,
+        topK: Number($('genTopK').value) || 5,
+        recallTopN: Number($('genRecall').value) || 20
+    };
+
+    setBusyGen(true);
+    clearLog();
+    $('genAnswerCard').style.display = '';
+    $('genStatus').textContent = 'RUNNING';
+    $('genStatus').className = 'badge-status';
+    $('genMeta').innerHTML = '';
+    $('genAnswer').innerHTML = '<div class="empty">正在检索资料、调用大模型…</div>';
+    $('genCiteCard').style.display = 'none';
+    $('genPromptCard').style.display = 'none';
+
+    try {
+        const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json());
+
+        if (!res.ok) {
+            appendLocalError(res.message || '提交失败');
+            setBusyGen(false);
+            return;
+        }
+        const traceId = res.data.traceId;
+        state7.traceId = traceId;
+        $('logTaskId').textContent = 'gen ' + traceId.slice(0, 8);
+
+        subscribe(traceId, () => {
+            setBusyGen(false);
+            loadGenerate(traceId);
+        }, `/api/generate/${traceId}/stream`);
+
+    } catch (e) {
+        appendLocalError('请求失败：' + e.message);
+        setBusyGen(false);
+    }
+}
+
+async function loadGenerate(traceId) {
+    try {
+        const res = await fetch(`/api/generate/${traceId}`).then(r => r.json());
+        if (!res.ok) {
+            $('genAnswer').innerHTML = `<div class="empty">${escapeHtml(res.message || '读取失败')}</div>`;
+            return;
+        }
+        state7.result = res.data.result;
+        renderGenerate(res.data.trace, res.data.result);
+    } catch (e) {
+        console.warn('读取生成结果失败', e);
+    }
+}
+
+function renderGenerate(t, r) {
+    const badge = $('genStatus');
+    badge.textContent = t.status;
+    badge.className = 'badge-status' + (t.status === 'SUCCESS' ? ' success' : t.status === 'FAILED' ? ' failed' : '');
+
+    if (t.status === 'FAILED') {
+        $('genAnswer').innerHTML = `<div class="empty">${escapeHtml(t.errorMsg || '生成失败')}</div>`;
+        return;
+    }
+    if (!r) {
+        $('genAnswer').innerHTML = '<div class="empty">生成中…</div>';
+        return;
+    }
+
+    const citedSet = new Set(r.cited || []);
+    $('genMeta').innerHTML = `
+        <span>模型 <b>${escapeHtml(r.model || '')}</b></span>
+        <span>${r.sources ? r.sources.length : 0} 片 → ${r.sentences ? r.sentences.length : 0} 句</span>
+        <span>上下文 <b>${(r.sentences || []).reduce((a, s) => a + s.charCount, 0)}</b> 字</span>
+        <span>prompt <b>${r.promptTokens || 0}</b> tokens</span>
+        <span>completion <b>${r.completionTokens || 0}</b> tokens</span>
+        <span>引用 <b>${citedSet.size}</b> 条</span>
+        <span>耗时 ${t.costMs}ms</span>`;
+
+    // 答案里的 [n] 渲染成徽章；越界的编号标红，说明模型引用了不存在的资料
+    const maxNo = (r.sentences || []).length;
+    let html = escapeHtml(r.answer || '');
+    html = html.replace(/\[(\d{1,2})]/g, (m, n) => {
+        const idx = Number(n);
+        const ok = idx >= 1 && idx <= maxNo;
+        return `<span class="cite-chip ${ok ? '' : 'orphan'}" data-cite="${idx}" title="${ok ? '点击查看这条依据' : '这条编号在资料里不存在'}">${idx}</span>`;
+    });
+    $('genAnswer').innerHTML = html;
+    $('genAnswer').querySelectorAll('.cite-chip').forEach(chip => {
+        chip.addEventListener('click', () => highlightCite(Number(chip.dataset.cite)));
+    });
+
+    renderCites(r, citedSet);
+    renderPrompt(r);
+}
+
+function renderCites(r, citedSet) {
+    const list = r.sentences || [];
+    $('genCiteCard').style.display = '';
+    $('genCiteMeta').textContent =
+        `共 ${list.length} 句，被引用 ${citedSet.size} 句 · 灰掉的没被答案用到`;
+
+    const pane = $('genCitePane');
+    pane.innerHTML = '';
+    if (!list.length) {
+        pane.innerHTML = '<div class="empty">没有可用依据</div>';
+        return;
+    }
+    list.forEach((s, i) => {
+        const no = i + 1;
+        const div = document.createElement('div');
+        div.className = 'cite-item' + (citedSet.has(no) ? '' : ' unused');
+        div.id = 'cite-' + no;
+        div.innerHTML = `
+            <span class="cite-no">${no}</span>
+            <div class="cite-body">
+                <div class="cite-text">${escapeHtml(s.text)}</div>
+                <div class="cite-src">《${escapeHtml(s.docName || '')}》 · 切片#${s.chunkIndex}
+                    ${s.heading ? ' · ' + escapeHtml(s.heading) : ''} · 来自第 ${s.sourceRank} 片</div>
+            </div>
+            <span class="cite-score">${Number(s.score).toFixed(3)}</span>`;
+        div.addEventListener('click', () => {
+            if (s.docId) {
+                openChunkDetail(s.docId, s.chunkIndex);
+            }
+        });
+        pane.appendChild(div);
+    });
+}
+
+function highlightCite(no) {
+    const el = $('cite-' + no);
+    if (!el) return;
+    document.querySelectorAll('.cite-item.hl').forEach(x => x.classList.remove('hl'));
+    el.classList.add('hl');
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => el.classList.remove('hl'), 2200);
+}
+
+function renderPrompt(r) {
+    $('genPromptCard').style.display = '';
+    const text = state7.promptTab === 'system' ? (r.systemPrompt || '') : (r.userPrompt || '');
+    $('genPrompt').textContent = text || '（空）';
+}
+
+/* 事件绑定 */
+$('btnGenerate').addEventListener('click', doGenerate);
+
+$('genQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        doGenerate();
+    }
+});
+
+document.querySelectorAll('.gen-tabs .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.gen-tabs .tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        state7.promptTab = tab.dataset.prompt;
+        if (state7.result) {
+            renderPrompt(state7.result);
+        }
+    });
+});
+
+$('btnCopyAnswer').addEventListener('click', async () => {
+    if (!state7.result) return;
+    try {
+        await navigator.clipboard.writeText(state7.result.answer || '');
+        $('btnCopyAnswer').textContent = '✓ 已复制';
+        setTimeout(() => $('btnCopyAnswer').textContent = '复制', 1500);
+    } catch (e) {
+        alert('复制失败，请手动选中');
+    }
+});
+
+/* 显示当前生成模型 */
+fetch('/api/health').then(r => r.json()).then(res => {
+    const m = res && res.data && res.data.config && res.data.config.generateModel;
+    if (m) $('genModel').textContent = '模型 ' + m;
+}).catch(() => {});
+
+/* 深链：?stage=7&trace=<id> 直接打开某次生成 */
+if (params.get('stage') === '7') {
+    switchStage(7);
+    const genParam = params.get('trace');
+    if (genParam) {
+        state7.traceId = genParam;
+        $('genAnswerCard').style.display = '';
+        $('logTaskId').textContent = 'gen ' + genParam.slice(0, 8);
+        subscribe(genParam, () => loadGenerate(genParam), `/api/generate/${genParam}/stream`);
+        loadGenerate(genParam);
     }
 }

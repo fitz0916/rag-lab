@@ -73,6 +73,13 @@
                 <i>同一批问题跑所有策略，用指标说话</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="7">
+            <span class="st-num">07</span>
+            <span class="st-text">
+                <b>生成</b>
+                <i>上下文 → Prompt → 答案 + 引用依据</i>
+            </span>
+        </button>
         <div class="stage-tip" id="stageTip">阶段一：先把知识灌进向量库</div>
     </nav>
 
@@ -653,6 +660,97 @@
                     诚实提醒：关键词判定只能验证字面命中，验证不了语义正确。
                     低分不一定是实现错，也可能是用例写得刁或者库里确实没有答案。
                     12 条用例的样本很小，一两条的差异不要过度解读。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段七：生成 ==================== -->
+        <section class="left hidden" id="stage7Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>07 · 提问</h2>
+                    <span class="hint-inline" id="genModel">模型检测中…</span>
+                </div>
+                <textarea class="input" id="genQuery" rows="2"
+                          placeholder="例：模型的采集深度应执行哪一级要求？资料不足时我会直说。"></textarea>
+                <div class="retrieve-bar">
+                    <label>Top-K
+                        <select class="input" id="genTopK">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label>召回 N
+                        <select class="input" id="genRecall">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="30">30</option>
+                        </select>
+                    </label>
+                    <button class="primary" id="btnGenerate">
+                        <span class="spinner hidden"></span><span class="btn-text">生成答案</span>
+                    </button>
+                </div>
+                <p class="hint-inline" style="margin-top:8px">
+                    检索走「召回 + 重排 + 句子压缩」，只有压缩后的句子会进 Prompt —— 上面六个阶段的成果都用上了。
+                </p>
+            </div>
+
+            <div class="card" id="genAnswerCard" style="display:none">
+                <div class="card-head">
+                    <h2>答案</h2>
+                    <div class="gen-head-right">
+                        <span class="badge-status" id="genStatus">RUNNING</span>
+                        <button class="mini-btn" id="btnCopyAnswer">复制</button>
+                    </div>
+                </div>
+                <div class="gen-meta" id="genMeta"></div>
+                <div class="gen-answer" id="genAnswer"><div class="empty">生成中…</div></div>
+                <p class="hint-inline">答案里的 <span class="cite-chip">1</span> 是依据编号，对应下面「引用依据」的第 1 条。</p>
+            </div>
+
+            <div class="card" id="genCiteCard" style="display:none">
+                <div class="card-head">
+                    <h2>引用依据</h2>
+                    <span class="hint-inline" id="genCiteMeta"></span>
+                </div>
+                <div id="genCitePane" class="result-pane"></div>
+            </div>
+
+            <div class="card" id="genPromptCard" style="display:none">
+                <div class="card-head">
+                    <h2>发给模型的 Prompt</h2>
+                    <span class="hint-inline">出问题时先看这里：是资料不对，还是提示词没约束住</span>
+                </div>
+                <div class="gen-tabs">
+                    <button class="tab active" data-prompt="user">用户消息（资料+问题）</button>
+                    <button class="tab" data-prompt="system">系统提示</button>
+                </div>
+                <pre class="gen-prompt" id="genPrompt"></pre>
+            </div>
+
+            <div class="card learn-note">
+                <h4>这一阶段在学什么</h4>
+                <p>
+                    <b>生成是唯一「模型会说话」的一步，也是最容易掩盖问题的一步。</b>
+                    答案读起来通顺，不代表它是从你的资料里来的 —— 大模型完全可以不看资料、
+                    凭训练记忆编一段很像的。所以这里强制要求它按 <code>[编号]</code> 引用，
+                    引用对不上就说明它没在用了。
+                </p>
+                <p><b>三个可以自己验证的点：</b></p>
+                <ul>
+                    <li><b>改 Top-K</b>：从 3 改成 8，prompt tokens 会涨，但答案不一定变好 ——
+                        多出来的往往是噪音。这就是「上下文控制」的意义。</li>
+                    <li><b>问一个库里没有的问题</b>：正确答案应该是「资料里没有提到」。
+                        如果它一本正经地编，说明 prompt 的约束还不够硬。</li>
+                    <li><b>看 prompt 原文</b>：很多「答非所问」一看 prompt 就明白了 ——
+                        要么资料里根本没有答案，要么关键那句被压缩掉了。</li>
+                </ul>
+                <p class="dim">
+                    成本口径：prompt_tokens 是大模型真实计费的输入量，和阶段五估算的「字 × 1.5」会有偏差，
+                    以这里的真实值为准。
                 </p>
             </div>
         </section>
