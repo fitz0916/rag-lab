@@ -87,6 +87,13 @@
                 <i>一个问法变三路，融合后再精排</i>
             </span>
         </button>
+        <button class="stage-tab" data-stage="9">
+            <span class="st-num">09</span>
+            <span class="st-text">
+                <b>多层缓存</b>
+                <i>内存 → Redis → 语义，省掉重复计算</i>
+            </span>
+        </button>
         <button class="note-btn" id="btnNotes" title="跳到当前阶段的笔记：开发总结 + 学习笔记">📓 阶段笔记</button>
     </nav>
 
@@ -855,6 +862,112 @@
                     可以自己验证：把「融合后重排」关掉再跑一次 —— 指标会变差（Hit@5 86.7% vs 100%），
                     说明融合的排序质量不如重排，两者叠加时是重排在兜底。这也解释了为什么
                     默认配置保留了重排。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段九：多层缓存 ==================== -->
+        <section class="left hidden" id="stage9Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>09 · 缓存状态</h2>
+                    <div class="cache-actions">
+                        <button class="mini-btn" id="btnCacheRefresh">刷新</button>
+                        <button class="mini-btn" id="btnCacheClearL1" title="只清内存层，用来验证 L2 是否生效">只清 L1</button>
+                        <button class="mini-btn danger-mini" id="btnCacheClear">清空全部</button>
+                    </div>
+                </div>
+
+                <div class="cache-grid">
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L1</b><span>内存 · LRU</span></div>
+                        <div class="cl-main" id="cacheL1Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL1Hits">0</span> 次</div>
+                        <div class="cl-note">进程内，最快，重启即失</div>
+                    </div>
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L2</b><span>Redis · 持久</span></div>
+                        <div class="cl-main" id="cacheL2Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL2Hits">0</span> 次</div>
+                        <div class="cl-note" id="cacheRedisAddr">—</div>
+                    </div>
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L3</b><span>语义 · 相似即可</span></div>
+                        <div class="cl-main" id="cacheL3Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL3Hits">0</span> 次</div>
+                        <div class="cl-note" id="cacheThreshold">阈值 —</div>
+                    </div>
+                    <div class="cache-layer total">
+                        <div class="cl-head"><b>总命中率</b><span id="cacheRateSub"></span></div>
+                        <div class="cl-main" id="cacheHitRate">—</div>
+                        <div class="cl-sub">未命中 <span id="cacheMisses">0</span> 次</div>
+                        <div class="cl-note" id="cacheTtl">TTL —</div>
+                    </div>
+                </div>
+                <p class="hint-inline">
+                    三个数字的关系：L1 是进程内缓存，L2 是 Redis（重启后还在），L3 靠向量相似度兜「换了个说法」。
+                    「只清 L1」之后同一问题仍应命中 L2 —— 这是验证多层是否真的接上的最快办法。
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>一键跑通三层</h2>
+                    <span class="hint-inline">依次：清空 → 首问 → 重复问 → 清 L1 → 再问 → 换个说法</span>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">基准问题
+                        <input class="input" id="cacheDemoQuery" value="模型的采集深度应执行哪一级要求">
+                    </label>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">同义问题（换个说法）
+                        <input class="input" id="cacheDemoParaphrase" value="模型的采集深度执行哪一级">
+                    </label>
+                    <button class="primary" id="btnCacheDemo">
+                        <span class="spinner hidden"></span><span class="btn-text">跑一遍</span>
+                    </button>
+                </div>
+                <div id="cacheDemoPane" class="result-pane" style="margin-top:12px">
+                    <div class="empty">点「跑一遍」：第一次走完整链路（约 5~7 秒），后面几次应该都是毫秒级。</div>
+                </div>
+                <p class="hint-inline">
+                    会真实调用一次大模型（首问）+ 三次缓存读取，共约 10 秒。
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>只查缓存</h2>
+                    <span class="hint-inline">不生成，只看「现在有没有被缓存」</span>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">问题
+                        <input class="input" id="cacheProbeQuery" placeholder="模型的采集深度执行哪一级">
+                    </label>
+                    <button class="mini-btn" id="btnCacheProbe">查一下</button>
+                </div>
+                <div id="cacheProbePane" class="result-pane" style="margin-top:10px"></div>
+                <p class="hint-inline">
+                    未命中时也会显示「最相似的历史问题有多像」—— 差多少、阈值该不该调，一眼能看出来。
+                </p>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>缓存是唯一能把 5 秒变成 5 毫秒的优化。</b> 但它不产生任何新能力，只是复用旧结果 ——
+                    所以「什么时候失效」比「怎么缓存」更重要。
+                </p>
+                <ul>
+                    <li><b>键要包含参数</b>：同一个问题，Top-K=3 和 Top-K=8 的结果不同，不能共用一份缓存。</li>
+                    <li><b>入库必须清缓存</b>：知识库变了，旧答案就是错的，而且页面上完全看不出来。</li>
+                    <li><b>语义阈值必须实测</b>：本项目里同义改写相似度只有 0.68~0.84，文章推荐的 0.95
+                        在这套模型上等于关闭语义缓存。数字是按模型来的，不是按经验来的。</li>
+                </ul>
+                <p class="dim">
+                    实测：L1 命中约 5~60ms，L2 约 40~90ms，未命中（走完整 RAG + 生成）约 4~7 秒。
                 </p>
             </div>
         </section>

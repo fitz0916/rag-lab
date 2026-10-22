@@ -68,7 +68,11 @@ public enum Stage {
     REWRITE_RECALL("多变体召回", "每个变体各跑一遍混合检索 —— 原查询始终保留，改写只是补充"),
     REWRITE_MERGE("跨变体融合", "RRF 再看一次排名：被多个变体同时命中的，说明不是偶然"),
     REWRITE_RERank("融合后重排", "可选：把融合结果再交给交叉编码器精排，压掉「多路都沾边但都不准」的"),
-    REWRITE_DONE("完成", "写入 kb_rewrite_trace");
+    REWRITE_DONE("完成", "写入 kb_rewrite_trace"),
+
+    // ============ 阶段九：多层缓存 ============
+    CACHE_LOOKUP("查缓存", "先问三层缓存：命中就不检索、不调模型 —— 5 秒变 5 毫秒"),
+    CACHE_STORE("写缓存", "按「问题 + 参数」存进 L1/L2/L3，并设置 TTL");
 
     private final String label;
     private final String description;

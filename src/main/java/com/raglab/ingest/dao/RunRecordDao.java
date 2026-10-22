@@ -164,7 +164,8 @@ public class RunRecordDao {
             }
             sql.append("""
                     (SELECT 'GENERATE' AS run_type, id, query_text AS title, status, cost_ms, created_at AS ts,
-                            CONCAT(source_chunks, ' 片 → ', sentence_count, ' 句 · ', prompt_tokens,
+                            CONCAT(IF(cache_hit = 1, CONCAT('缓存命中 ', cache_layer, ' · '), ''),
+                                   source_chunks, ' 片 → ', sentence_count, ' 句 · ', prompt_tokens,
                                    ' prompt tokens · 引用 ', cited_count) AS summary,
                             error_msg
                        FROM kb_generate_trace

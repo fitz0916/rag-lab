@@ -1,5 +1,6 @@
 package com.raglab.ingest.service;
 
+import com.raglab.cache.CacheService;
 import com.raglab.common.Stage;
 import com.raglab.config.RagLabProperties;
 import com.raglab.ingest.dao.ChunkDao;
@@ -45,11 +46,12 @@ public class IngestPipeline {
     private final TaskDao taskDao;
     private final IngestLogBus bus;
     private final RagLabProperties props;
+    private final CacheService cache;
 
     public IngestPipeline(DocumentParser parser, TextCleaner cleaner, SmartTextSplitter splitter,
                           QwenEmbeddingClient embeddingClient, ChromaClient chromaClient,
                           DocumentDao documentDao, ChunkDao chunkDao, TaskDao taskDao,
-                          IngestLogBus bus, RagLabProperties props) {
+                          IngestLogBus bus, RagLabProperties props, CacheService cache) {
         this.parser = parser;
         this.cleaner = cleaner;
         this.splitter = splitter;
@@ -60,6 +62,7 @@ public class IngestPipeline {
         this.taskDao = taskDao;
         this.bus = bus;
         this.props = props;
+        this.cache = cache;
     }
 
     public void run(IngestJob job) {
@@ -334,6 +337,13 @@ public class IngestPipeline {
             logger.ok(stage, ("入库完成：文档 #%d，%d 片，%d 条向量，总耗时 %dms（%.1fs）")
                             .formatted(docId, chunks.size(), storedTotal, total, total / 1000.0),
                     total);
+
+            // ================= 12. 让缓存失效 =================
+            // 知识库变了，之前基于旧内容生成的答案就必须作废。
+            // 不做这一步的后果：用户问同样的问题，会拿到「按旧文档生成的答案」，
+            // 而且页面上一切正常 —— 这是缓存最难发现的问题。
+            int cleared = cache.clearAll("文档入库成功 #" + docId);
+            logger.info(stage, "已清空缓存（%d 条），避免返回旧知识库的答案".formatted(cleared));
             success = true;
 
         } catch (Exception e) {

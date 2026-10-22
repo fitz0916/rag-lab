@@ -39,6 +39,18 @@ public class SchemaMigrator implements ApplicationRunner {
             new String[]{"kb_hybrid_trace", "idx_hybrid_time2", "created_at"}
     );
 
+    /**
+     * 表名 → (列名, 列定义)。用于给已存在的表补列。
+     *
+     * 为什么需要：CREATE TABLE IF NOT EXISTS 对已存在的表整段跳过，
+     * 后来新增的列进不去（MySQL 8 也不支持 ADD COLUMN IF NOT EXISTS）。
+     */
+    private static final List<String[]> WANTED_COLUMNS = List.of(
+            new String[]{"kb_generate_trace", "cache_hit", "TINYINT NOT NULL DEFAULT 0"},
+            new String[]{"kb_generate_trace", "cache_layer", "VARCHAR(8) DEFAULT NULL"},
+            new String[]{"kb_generate_trace", "cache_similarity", "DOUBLE DEFAULT NULL"}
+    );
+
     private final JdbcTemplate jdbc;
 
     public SchemaMigrator(JdbcTemplate jdbc) {
@@ -55,6 +67,32 @@ public class SchemaMigrator implements ApplicationRunner {
                 log.warn("索引迁移失败 table={} index={} : {}", idx[0], idx[1], e.getMessage());
             }
         }
+        for (String[] col : WANTED_COLUMNS) {
+            try {
+                ensureColumn(col[0], col[1], col[2]);
+            } catch (Exception e) {
+                log.warn("列迁移失败 table={} column={} : {}", col[0], col[1], e.getMessage());
+            }
+        }
+    }
+
+    private void ensureColumn(String table, String column, String definition) {
+        Integer tableExists = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.tables
+                 WHERE table_schema = DATABASE() AND table_name = ?
+                """, Integer.class, table);
+        if (tableExists == null || tableExists == 0) {
+            return;
+        }
+        Integer exists = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                 WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+                """, Integer.class, table, column);
+        if (exists != null && exists > 0) {
+            return;
+        }
+        jdbc.execute("ALTER TABLE %s ADD COLUMN %s %s".formatted(table, column, definition));
+        log.info("已新增列 {}.{} ({})", table, column, definition);
     }
 
     private void ensureIndex(String table, String indexName, String columns) {

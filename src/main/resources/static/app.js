@@ -51,6 +51,10 @@ const STAGE_LABEL = {
     EVAL_AGGREGATE: '汇总对比',
     EVAL_DONE: '完成',
 
+    // 阶段九：多层缓存
+    CACHE_LOOKUP: '查缓存',
+    CACHE_STORE: '写缓存',
+
     // 阶段八：查询重写
     REWRITE_GEN: '生成变体',
     REWRITE_RECALL: '多变体召回',
@@ -756,7 +760,8 @@ const STAGE_TIPS = {
     5: '阶段五：只保留真正回答问题的句子，压成可直接用的上下文',
     6: '阶段六：同一批问题跑所有策略，用 Hit@K / MRR 判断优化到底有没有用',
     7: '阶段七：把上下文拼进 Prompt，生成带引用的答案 —— 这一步才是用户看到的东西',
-    8: '阶段八：把问题换几种说法分别检索，再看融合 —— 唯一每次都要多花 LLM 钱的一步'
+    8: '阶段八：把问题换几种说法分别检索，再看融合 —— 唯一每次都要多花 LLM 钱的一步',
+    9: '阶段九：内存 → Redis → 语义，三层缓存把重复的问题变成毫秒级'
 };
 
 const STAGE_BADGE = {
@@ -767,7 +772,8 @@ const STAGE_BADGE = {
     5: '阶段五 · 上下文控制',
     6: '阶段六 · 评测',
     7: '阶段七 · 生成',
-    8: '阶段八 · 查询重写'
+    8: '阶段八 · 查询重写',
+    9: '阶段九 · 多层缓存'
 };
 
 function switchStage(n) {
@@ -782,6 +788,7 @@ function switchStage(n) {
     $('stage6Pane').classList.toggle('hidden', n !== 6);
     $('stage7Pane').classList.toggle('hidden', n !== 7);
     $('stage8Pane').classList.toggle('hidden', n !== 8);
+    $('stage9Pane').classList.toggle('hidden', n !== 9);
     const tip = $('stageTip');
     if (tip) {
         tip.textContent = STAGE_TIPS[n] || '';
@@ -2453,4 +2460,213 @@ if (params.get('notes')) {
             if (tab) tab.click();
         }
     }, 350);
+}
+
+/* ============================================================
+   阶段九：多层缓存
+   ------------------------------------------------------------
+   这一阶段最好玩的地方是「看得见」：
+   同一个问题问三次，耗时从 7 秒掉到 60 毫秒，还能看出是哪一层接住的。
+   ============================================================ */
+const state9 = { busy: false };
+
+async function loadCacheStats() {
+    try {
+        const res = await fetch('/api/cache/stats').then(r => r.json());
+        if (!res.ok) return;
+        const s = res.data.stats;
+        $('cacheL1Size').textContent = s.l1Size;
+        $('cacheL2Size').textContent = s.l2Keys;
+        $('cacheL3Size').textContent = s.l3Size;
+        $('cacheL1Hits').textContent = s.l1Hits;
+        $('cacheL2Hits').textContent = s.l2Hits;
+        $('cacheL3Hits').textContent = s.l3Hits;
+        $('cacheMisses').textContent = s.misses;
+        $('cacheHitRate').textContent = (s.hitRate * 100).toFixed(0) + '%';
+        $('cacheRateSub').textContent = s.stores + ' 次写入';
+        $('cacheTtl').textContent = 'TTL ' + s.ttlSeconds + 's · 容量 ' + s.capacity;
+        $('cacheThreshold').textContent = '阈值 ' + s.threshold + ' · ' + s.l3Size + ' 条向量';
+        $('cacheRedisAddr').textContent = (s.redisOk ? '在线 ' : '离线 ') + res.data.redis;
+    } catch (e) {
+        console.warn('读取缓存统计失败', e);
+    }
+}
+
+async function cacheGenerateOnce(query) {
+    const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, topK: 5, recallTopN: 20 })
+    }).then(r => r.json());
+    if (!res.ok) {
+        throw new Error(res.message || '提交失败');
+    }
+    const traceId = res.data.traceId;
+    for (let i = 0; i < 100; i++) {
+        const d = await fetch(`/api/generate/${traceId}`).then(r => r.json());
+        const t = d.data && d.data.trace;
+        if (t && t.status !== 'RUNNING') {
+            return t;
+        }
+        await new Promise(r => setTimeout(r, 300));
+    }
+    throw new Error('等待超时');
+}
+
+async function cacheStep(label, query, note) {
+    const t0 = performance.now();
+    let t;
+    try {
+        t = await cacheGenerateOnce(query);
+    } catch (e) {
+        return { label, query, layer: 'ERR', cost: 0, sim: 0, chars: 0, note: e.message };
+    }
+    return {
+        label,
+        query,
+        layer: t.cacheHit ? (t.cacheLayer || '?') : 'MISS',
+        cost: Math.round(performance.now() - t0),
+        sim: t.cacheSimilarity || 0,
+        chars: t.answerChars || 0,
+        note: note || ''
+    };
+}
+
+function renderCacheDemo(rows) {
+    const base = rows[0] && rows[0].cost > 0 ? rows[0].cost : 1;
+    let html = `<table class="cache-table"><thead><tr>
+        <th>步骤</th><th>命中层</th><th>耗时</th><th>相对首问</th><th>说明</th>
+    </tr></thead><tbody>`;
+    rows.forEach(r => {
+        const speed = r.cost > 0 ? (base / r.cost) : 0;
+        const pill = `<span class="layer-pill ${r.layer}">${r.layer}</span>`;
+        html += `<tr>
+            <td>${escapeHtml(r.label)}</td>
+            <td>${pill}</td>
+            <td class="mono">${r.cost}ms</td>
+            <td class="mono">${r.layer === 'MISS' ? '—' : speed.toFixed(0) + '×'}</td>
+            <td>${escapeHtml(r.note || '')
+                + (r.sim > 0 && r.layer === 'L3' ? `（相似度 ${r.sim.toFixed(4)}）` : '')}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<p class="hint-inline" style="margin-top:8px">
+        首问要向量化 + 检索 + 重排 + 压缩 + 调模型；后面三次只查了一层缓存。
+        省掉的不只是时间，还有 embedding 和 LLM 的钱。</p>`;
+    $('cacheDemoPane').innerHTML = html;
+}
+
+async function runCacheDemo() {
+    const q = $('cacheDemoQuery').value.trim();
+    const pq = $('cacheDemoParaphrase').value.trim();
+    if (!q) {
+        $('cacheDemoQuery').focus();
+        return;
+    }
+    state9.busy = true;
+    const btn = $('btnCacheDemo');
+    btn.disabled = true;
+    btn.querySelector('.spinner').classList.remove('hidden');
+    btn.querySelector('.btn-text').textContent = '跑第 1 步…';
+
+    const rows = [];
+    try {
+        await fetch('/api/cache', { method: 'DELETE' });
+        rows.push(await cacheStep('① 首次提问', q, '清空缓存后第一次，必然未命中'));
+        btn.querySelector('.btn-text').textContent = '跑第 2 步…';
+
+        rows.push(await cacheStep('② 原样再问', q, '同样的字符串 → L1 内存'));
+        btn.querySelector('.btn-text').textContent = '跑第 3 步…';
+
+        await fetch('/api/cache/l1', { method: 'DELETE' });
+        rows.push(await cacheStep('③ 清 L1 后再问', q, '内存被清空了 → 应该落到 L2 Redis'));
+        btn.querySelector('.btn-text').textContent = '跑第 4 步…';
+
+        if (pq) {
+            rows.push(await cacheStep('④ 换个说法', pq, '措辞不同 → 只能靠 L3 语义'));
+        }
+
+        renderCacheDemo(rows);
+    } catch (e) {
+        $('cacheDemoPane').innerHTML = `<div class="empty">跑失败：${escapeHtml(e.message)}</div>`;
+    } finally {
+        state9.busy = false;
+        btn.disabled = false;
+        btn.querySelector('.spinner').classList.add('hidden');
+        btn.querySelector('.btn-text').textContent = '跑一遍';
+        loadCacheStats();
+    }
+}
+
+async function probeCache() {
+    const q = $('cacheProbeQuery').value.trim();
+    if (!q) {
+        $('cacheProbeQuery').focus();
+        return;
+    }
+    $('cacheProbePane').innerHTML = '<div class="empty">查询中…</div>';
+    try {
+        const res = await fetch('/api/cache/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: q, topK: 5 })
+        }).then(r => r.json());
+        if (!res.ok) {
+            $('cacheProbePane').innerHTML = `<div class="empty">${escapeHtml(res.message || '查询失败')}</div>`;
+            return;
+        }
+        const d = res.data;
+        const cls = d.hit ? 'hit' : 'miss';
+        const verdict = d.hit
+            ? `命中 ${d.layer}${d.layer === 'L3' ? `（相似度 ${d.similarity.toFixed(4)}）` : '（精确匹配）'}`
+            : `未命中，最相似的历史问题只有 ${d.similarity.toFixed(4)}`;
+        $('cacheProbePane').innerHTML = `
+            <div class="cache-probe">
+                <span class="${cls}"><b>${verdict}</b></span>
+                <span>耗时 <b>${d.costMs}ms</b></span>
+                ${d.hit ? `<span>答案 <b>${d.answerChars}</b> 字</span>` : ''}
+            </div>
+            ${d.hit && d.preview ? `<div class="cache-preview">${escapeHtml(d.preview)}</div>` : ''}`;
+        loadCacheStats();
+    } catch (e) {
+        $('cacheProbePane').innerHTML = `<div class="empty">请求失败：${escapeHtml(e.message)}</div>`;
+    }
+}
+
+/* 事件绑定 */
+$('btnCacheRefresh').addEventListener('click', loadCacheStats);
+$('btnCacheDemo').addEventListener('click', runCacheDemo);
+$('btnCacheProbe').addEventListener('click', probeCache);
+$('cacheProbeQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        probeCache();
+    }
+});
+$('btnCacheClearL1').addEventListener('click', async () => {
+    const res = await fetch('/api/cache/l1', { method: 'DELETE' }).then(r => r.json());
+    loadCacheStats();
+    if (res.ok) {
+        $('cacheProbePane').innerHTML = `<div class="hint-inline">已清 L1（${res.data.cleared} 条）。现在同一问题如果还能命中，就是 L2 在起作用。</div>`;
+    }
+});
+$('btnCacheClear').addEventListener('click', async () => {
+    if (!confirm('清空三层缓存？之后所有问题都会重新走完整链路。')) return;
+    await fetch('/api/cache', { method: 'DELETE' });
+    loadCacheStats();
+});
+
+loadCacheStats();
+
+/* 深链：?stage=9，加 &demo=1 自动跑一遍三层演示（会真实调一次大模型） */
+if (params.get('stage') === '9') {
+    switchStage(9);
+    if (params.get('demo') === '1') {
+        setTimeout(runCacheDemo, 500);
+    }
+    const probe = params.get('probe');
+    if (probe) {
+        $('cacheProbeQuery').value = probe;
+        setTimeout(probeCache, 500);
+    }
 }

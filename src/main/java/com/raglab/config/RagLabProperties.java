@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "raglab")
 public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
                                Log log, Rerank rerank, Context context, Eval eval,
-                               Generate generate, Rewrite rewrite) {
+                               Generate generate, Rewrite rewrite, Cache cache) {
 
     /**
      * 向量模型配置（Qwen / DashScope OpenAI 兼容模式）
@@ -111,5 +111,20 @@ public record RagLabProperties(Embedding embedding, Chroma chroma, Chunk chunk,
      * @param rerank         融合后是否再过一遍交叉编码器
      */
     public record Rewrite(int variants, double temperature, int originalWeight, boolean rerank) {
+    }
+
+    /**
+     * 多层缓存配置（阶段九）
+     *
+     * @param enabled           总开关。排查问题时可关掉，确认「不是缓存在捣乱」
+     * @param ttlSeconds        过期时间。知识库不常变可以调大，否则容易返回旧答案
+     * @param capacity          L1 内存条数上限（LRU 淘汰）
+     * @param semanticCapacity  L3 语义索引条数上限（暴力比对，太多会变慢）
+     * @param semanticThreshold 语义命中阈值。实测这套模型下同义改写只有 0.68~0.84，
+     *                          不同问题 0.26~0.45，所以默认 0.80；0.95 等于关闭语义缓存
+     * @param prefix            Redis key 前缀，方便按前缀清理
+     */
+    public record Cache(boolean enabled, int ttlSeconds, int capacity, int semanticCapacity,
+                        double semanticThreshold, String redisHost, int redisPort, String prefix) {
     }
 }

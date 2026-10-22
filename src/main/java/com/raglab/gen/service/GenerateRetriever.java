@@ -2,6 +2,7 @@ package com.raglab.gen.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.raglab.cache.CacheService;
 import com.raglab.common.Stage;
 import com.raglab.config.RagLabProperties;
 import com.raglab.gen.dao.GenerateTraceDao;
@@ -66,13 +67,14 @@ public class GenerateRetriever {
     private final IngestLogBus logBus;
     private final ObjectMapper objectMapper;
     private final RagLabProperties props;
+    private final CacheService cache;
 
     public GenerateRetriever(QwenEmbeddingClient embeddingClient, ChromaClient chromaClient,
                              Bm25Index bm25Index, RerankClient rerankClient,
                              SentenceExtractor sentenceExtractor, ContextBuilder contextBuilder,
                              ChatClient chatClient, GenerateTraceDao traceDao,
                              IngestLogBus logBus, ObjectMapper objectMapper,
-                             RagLabProperties props) {
+                             RagLabProperties props, CacheService cache) {
         this.embeddingClient = embeddingClient;
         this.chromaClient = chromaClient;
         this.bm25Index = bm25Index;
@@ -84,6 +86,7 @@ public class GenerateRetriever {
         this.logBus = logBus;
         this.objectMapper = objectMapper;
         this.props = props;
+        this.cache = cache;
     }
 
     private record Src(int rank, String chromaId, long docId, String docName,
@@ -93,13 +96,13 @@ public class GenerateRetriever {
     public void run(String traceId, String rawQuery, int recallTopN, int topK, int maxChars) {
         TaskLogger logger = new TaskLogger(traceId, logBus);
         long start = System.currentTimeMillis();
-        Stage stage = Stage.GEN_CONTEXT;
+        Stage stage = Stage.CACHE_LOOKUP;
         long stepStart = start;
         boolean success = false;
 
         try {
-            // ================= 1. 准备上下文 =================
-            stage = Stage.GEN_CONTEXT;
+            // ================= 0. 查缓存 =================
+            stage = Stage.CACHE_LOOKUP;
             stepStart = System.currentTimeMillis();
             logger.enter(stage);
             if (rawQuery == null || rawQuery.isBlank()) {
@@ -109,13 +112,69 @@ public class GenerateRetriever {
             int recallN = Math.max(5, Math.min(recallTopN, MAX_RECALL));
             int keepK = Math.max(1, Math.min(topK, 10));
             int charLimit = maxChars > 0 ? maxChars : props.context().maxChars();
+            CacheService.Params cacheParams = new CacheService.Params(keepK, chatClient.modelName());
 
             logger.info(stage, "问题：" + query);
+            logger.info(stage, "缓存键 = 归一化问题 + Top-K(%d) + 模型(%s)".formatted(keepK, chatClient.modelName()));
+            logger.info(stage, "顺序：L1 内存 → L2 Redis → L3 语义（L3 需要先算问题向量，所以放在最后）");
+
+            // 语义层需要问题向量：只在 exact 都没命中时才算，省掉一次 embedding
+            CacheService.Lookup look = cache.lookup("gen", query, cacheParams,
+                    () -> embeddingClient.embedBatch(List.of(query)).vectors().get(0));
+
+            if (look.hit()) {
+                GenerateResult cached = objectMapper.readValue(look.payload(), GenerateResult.class);
+                traceDao.markCacheHit(traceId, look.layer(), look.similarity());
+                traceDao.updateResult(traceId, cached.sources() == null ? 0 : cached.sources().size(),
+                        cached.sentences() == null ? 0 : cached.sentences().size(),
+                        cached.stats() == null ? 0 : cached.stats().finalChars(),
+                        (cached.systemPrompt() == null ? 0 : cached.systemPrompt().length())
+                                + (cached.userPrompt() == null ? 0 : cached.userPrompt().length()),
+                        cached.answer() == null ? 0 : cached.answer().length(),
+                        cached.promptTokens(), cached.completionTokens(),
+                        cached.cited() == null ? 0 : cached.cited().size(),
+                        look.payload());
+                long totalCost = System.currentTimeMillis() - start;
+                traceDao.finish(traceId, "SUCCESS", null, totalCost);
+
+                String sim = look.layer().equals("L3")
+                        ? "，相似度 %.4f".formatted(look.similarity()) : "";
+                logger.ok(stage, "缓存命中：%s%s，耗时 %dms".formatted(look.layer(), sim, look.costMs()),
+                        ("命中的是「%s」这条历史问题的结果。\n\n" +
+                                "省掉的东西：问题向量化、混合检索、重排、句子压缩、大模型生成。\n" +
+                                "正常情况下这条链路要 4~6 秒，现在 %d 毫秒。\n\n" +
+                                "注意：命中缓存意味着**这次没有读知识库**。\n" +
+                                "所以入库新文档后必须清缓存，否则会拿到旧答案 —— 这是缓存最隐蔽的坑。")
+                                .formatted(query, look.costMs()),
+                        look.costMs());
+                logger.ok(Stage.GEN_DONE, "完成（缓存命中，未调用大模型）",
+                        "本次 prompt/completion token 均为历史值，不代表新开销。",
+                        totalCost);
+                success = true;
+                return;
+            }
+
+            logger.ok(stage, "未命中（%s），走完整链路".formatted(look.layer()),
+                    ("L1/L2 是精确匹配，都没命中。\n" +
+                            "L3 找到的最相似历史问题是 %.4f，阈值 %.2f —— 差 %.4f，所以这次没复用。\n\n" +
+                            "阈值调低能提高命中率，但会开始出现「问 A 答 B」：\n" +
+                            "这正是缓存最需要评测的地方，不能凭感觉调。")
+                            .formatted(look.similarity(), props.cache().semanticThreshold(),
+                                    Math.max(0, props.cache().semanticThreshold() - look.similarity())),
+                    look.costMs());
+
+            // ================= 1. 准备上下文 =================
+            stage = Stage.GEN_CONTEXT;
+            stepStart = System.currentTimeMillis();
+            logger.enter(stage);
             logger.info(stage, "召回 Top-%d → 重排 Top-%d → 句子压缩（上限 %d 字）"
                     .formatted(recallN, keepK, charLimit));
 
             long recallStart = System.currentTimeMillis();
-            float[] qv = embeddingClient.embedBatch(List.of(query)).vectors().get(0);
+            // 语义层可能已经把问题向量算好了，复用，别重复调 embedding
+            float[] qv = look.queryVector() != null
+                    ? look.queryVector()
+                    : embeddingClient.embedBatch(List.of(query)).vectors().get(0);
             List<Src> sources = recallAndRerank(query, qv, recallN, keepK);
             if (sources.isEmpty()) {
                 throw new IllegalStateException("召回为空，检查阶段一是否已入库文档");
@@ -246,6 +305,19 @@ public class GenerateRetriever {
                     answer.content().length(), answer.usage().promptTokens(),
                     answer.usage().completionTokens(), cited.size(),
                     objectMapper.writeValueAsString(result));
+
+            // ================= 5. 写缓存 =================
+            stage = Stage.CACHE_STORE;
+            long storeStart = System.currentTimeMillis();
+            logger.enter(stage);
+            cache.store("gen", query, cacheParams, qv, objectMapper.writeValueAsString(result));
+            logger.ok(stage, "已写入 L1 / L2 / L3（TTL %d 秒）".formatted(props.cache().ttlSeconds()),
+                    ("下次问同样的问题（或语义相似度 ≥ %.2f 的问题），会直接返回这份答案。\n" +
+                            "入库新文档时会自动清空缓存 —— 否则会拿到旧知识库的答案。")
+                            .formatted(props.cache().semanticThreshold()),
+                    System.currentTimeMillis() - storeStart);
+
+            stage = Stage.GEN_DONE;
             long totalCost = System.currentTimeMillis() - start;
             traceDao.finish(traceId, "SUCCESS", null, totalCost);
 
@@ -411,6 +483,7 @@ public class GenerateRetriever {
 
     private String targetOf(Stage stage) {
         return switch (stage) {
+            case CACHE_LOOKUP, CACHE_STORE -> "Cache";
             case GEN_CONTEXT -> "Qwen/Chroma/Rerank";
             case GEN_CALL -> "DashScope-Chat";
             default -> "Generate";

@@ -23,6 +23,9 @@ public class GenerateTraceDao {
             rs.getInt("prompt_tokens"),
             rs.getInt("completion_tokens"),
             rs.getInt("cited_count"),
+            rs.getInt("cache_hit") == 1,
+            rs.getString("cache_layer"),
+            (Double) rs.getObject("cache_similarity"),
             rs.getLong("cost_ms"),
             rs.getString("status"),
             rs.getString("error_msg"),
@@ -53,6 +56,12 @@ public class GenerateTraceDao {
                  WHERE id = ?
                 """, sourceChunks, sentenceCount, contextChars, promptChars, answerChars,
                 promptTokens, completionTokens, citedCount, resultJson, id);
+    }
+
+    /** 命中缓存时标记，便于在运行记录里一眼看出「这次没花钱」 */
+    public void markCacheHit(String id, String layer, double similarity) {
+        jdbc.update("UPDATE kb_generate_trace SET cache_hit = 1, cache_layer = ?, cache_similarity = ? WHERE id = ?",
+                layer, similarity, id);
     }
 
     public void finish(String id, String status, String errorMsg, long costMs) {
