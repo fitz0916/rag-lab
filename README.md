@@ -104,8 +104,8 @@ cp .env.example .env      # 首次创建
 # 必填：到 https://bailian.console.aliyun.com 创建 API-KEY
 QWEN_API_KEY=sk-xxxxxxxxxxxxxxxx
 
-# MySQL 密码
-MYSQL_PASSWORD=Root1234
+# MySQL 密码（别写真密码，自己填）
+MYSQL_PASSWORD=your-mysql-password
 
 # Chroma 宿主机映射端口（不是容器内的 8000）
 CHROMA_BASE_URL=http://127.0.0.1:58019
@@ -167,6 +167,24 @@ java -jar target/rag-lab-1.0.0.jar --server.port=8080
 > 命令行参数优先级最高，加上它就能压住。
 
 打开 <http://localhost:8080>
+
+---
+
+## 发布给别人看（不泄露数据库和 API Key）
+
+整套 9 个阶段可以打包成**纯静态站点**发布到 GitHub Pages：别人的浏览器里没有后端、没有数据库、没有 Key，所有 `/api` 请求都被一层拦截脚本接住，直接读录好的 JSON。
+
+```bash
+node tools/record-demo.mjs                          # 录制 9 阶段真实运行（不重新入库）
+node tools/build-site.mjs                           # 打包到 site/，含密钥自检
+node tools/serve-site.mjs 5173                      # 预览：http://127.0.0.1:5173/rag-lab/
+node tools/verify-site.mjs http://127.0.0.1:5173/rag-lab/   # 48 项断言
+node tools/publish-gh-pages.mjs git@github.com:you/rag-lab.git
+```
+
+原理、脱敏规则、常见问题见 **[docs/PUBLISH.md](docs/PUBLISH.md)**。
+
+> 本地 `localhost:8080` 打开时不会拦截，照常走真后端；加 `?demo=1` 可强制回放，`?live=1` 强制真后端。
 
 ---
 
@@ -555,8 +573,8 @@ L1 内存（LRU + TTL） → L2 Redis（SET EX） → L3 语义（向量余弦 �
 **顺手写了个零依赖 Redis 客户端**
 
 只需要 5 个命令（SET EX / GET / DEL / SCAN / DBSIZE），引 Jedis/Lettuce 反而看不清发生了什么。
-RESP2 协议本身很简单：`*参数个数` + 每个 `$长度
-内容
+RESP2 协议本身很简单：`*参数个数` + 每个 `$长度
+内容
 `，回复按首字符区分类型。
 100 行左右，`cache/RedisClient.java`，出异常自动重连一次。
 

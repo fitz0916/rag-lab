@@ -19,3 +19,9 @@ target/
 logs/
 *.log
 .DS_Store
+
+# ---- 静态站构建产物（可随时重新生成）----
+site/
+
+# ---- 录制时的原始数据（含未脱敏内容，只留在本地）----
+tools/.replay-backup/
