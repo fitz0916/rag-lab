@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 显微镜 · 每一步都看得见</title>
+    <link rel="stylesheet" href="./style.css?v=13">
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo">R</div>
+            <div class="brand-text">
+                <h1>RAG 显微镜 <span class="phase" id="phaseBadge">阶段一 · 切片入库</span></h1>
+                <p>文档入库 → 向量化 → 相似度检索，每一步都看得见</p>
+            </div>
+        </div>
+        <div class="top-right">
+            <button class="ghost-btn" id="btnRuns" title="查看历史运行记录（入库 / 检索）">
+                <span class="gb-icon">⏱</span>
+                <span>运行记录</span>
+            </button>
+            <div class="health" id="health">
+                <div class="pill" data-key="mysql"><i></i><span>MySQL</span><em>检测中</em></div>
+                <div class="pill" data-key="chroma"><i></i><span>Chroma</span><em>检测中</em></div>
+                <div class="pill" data-key="qwen"><i></i><span>Qwen</span><em>检测中</em></div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== 阶段导航 ==================== -->
+    <nav class="stage-nav">
+        <button class="stage-tab active" data-stage="1">
+            <span class="st-num">01</span>
+            <span class="st-text">
+                <b>切片入库</b>
+                <i>文档 → 清洗 → 切片 → 向量化 → Chroma</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="2">
+            <span class="st-num">02</span>
+            <span class="st-text">
+                <b>向量检索</b>
+                <i>问题 → 向量 → 最近邻 → Top-K 相似度</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="3">
+            <span class="st-num">03</span>
+            <span class="st-text">
+                <b>混合检索</b>
+                <i>向量 + BM25 双路召回 → RRF 融合</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="4">
+            <span class="st-num">04</span>
+            <span class="st-text">
+                <b>重排序</b>
+                <i>召回 Top-N → 交叉编码器精排 Top-K</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="5">
+            <span class="st-num">05</span>
+            <span class="st-text">
+                <b>上下文控制</b>
+                <i>拆句 → 打分 → 去重 → 只留关键句</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="6">
+            <span class="st-num">06</span>
+            <span class="st-text">
+                <b>评测</b>
+                <i>同一批问题跑所有策略，用指标说话</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="7">
+            <span class="st-num">07</span>
+            <span class="st-text">
+                <b>生成</b>
+                <i>上下文 → Prompt → 答案 + 引用依据</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="8">
+            <span class="st-num">08</span>
+            <span class="st-text">
+                <b>查询重写</b>
+                <i>一个问法变三路，融合后再精排</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="9">
+            <span class="st-num">09</span>
+            <span class="st-text">
+                <b>多层缓存</b>
+                <i>内存 → Redis → 语义，省掉重复计算</i>
+            </span>
+        </button>
+        <button class="stage-tab" data-stage="10">
+            <span class="st-num">10</span>
+            <span class="st-text">
+                <b>答案质量</b>
+                <i>让另一个模型当裁判：答得对不对</i>
+            </span>
+        </button>
+        <button class="note-btn" id="btnNotes" title="跳到当前阶段的笔记：开发总结 + 学习笔记">📓 阶段笔记</button>
+    </nav>
+
+    <main class="workspace">
+        <div class="stage-panes">
+        <!-- ==================== 阶段一：入库 ==================== -->
+        <section class="left" id="stage1Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>向量模型</span><b id="piModel">检测中…</b></div>
+                <div class="pi-row"><span>向量库</span><b id="piChroma">检测中…</b></div>
+                <div class="pi-row"><span>切片配置</span><b id="piChunk">检测中…</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 选择输入</h2>
+                    <div class="tabs">
+                        <button class="tab active" data-tab="file">文件上传</button>
+                        <button class="tab" data-tab="text">粘贴文本</button>
+                    </div>
+                </div>
+
+                <div class="tab-body" id="pane-file">
+                    <div class="dropzone" id="dropzone">
+                        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md,.markdown" hidden>
+                        <div class="dz-icon">⬆</div>
+                        <div class="dz-main">点击选择文件，或把文件拖到这里</div>
+                        <div class="dz-sub">支持 PDF / DOCX / TXT / Markdown，单文件 ≤ 50MB</div>
+                        <div class="dz-file" id="pickedFile"></div>
+                    </div>
+                </div>
+
+                <div class="tab-body hidden" id="pane-text">
+                    <input type="text" id="textName" class="input" placeholder="文档名（用于检索时溯源）">
+                    <textarea id="textBody" class="textarea" rows="9"
+                              placeholder="把文章或笔记粘进来，Markdown 标题会被识别成切片上下文…"></textarea>
+                </div>
+
+                <div class="params">
+                    <label>
+                        <span>切片长度 size</span>
+                        <input type="number" id="chunkSize" class="input num" placeholder="500" min="100" max="4000">
+                    </label>
+                    <label>
+                        <span>重叠 overlap</span>
+                        <input type="number" id="chunkOverlap" class="input num" placeholder="80" min="0" max="500">
+                    </label>
+                    <p class="hint">留空则使用 application.yml 中的配置。改这两个值重新入库，能直观看到切片粒度对召回的影响。</p>
+                </div>
+
+                <button class="primary" id="btnStart">
+                    <span class="btn-text">开始入库</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="taskCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 任务进度</h2>
+                    <span class="badge-status" id="taskStatus">RUNNING</span>
+                </div>
+                <div class="task-line" id="taskMeta"></div>
+                <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+                <div class="task-stats">
+                    <div><span id="statStage">—</span><small>当前步骤</small></div>
+                    <div><span id="statChunks">0</span><small>切片数</small></div>
+                    <div><span id="statVectors">0</span><small>已写向量</small></div>
+                    <div><span id="statCost">0ms</span><small>耗时</small></div>
+                </div>
+                <div class="task-error hidden" id="taskError"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>结果预览</h2>
+                    <div class="tabs">
+                        <button class="tab active" data-result="chunks">切片预览</button>
+                        <button class="tab" data-result="docs">文档列表</button>
+                    </div>
+                </div>
+                <div id="chunkPane" class="result-pane">
+                    <div class="empty">入库成功后，这里显示每一片切片的正文、所属标题和对应的向量 id</div>
+                </div>
+                <div id="docPane" class="result-pane hidden">
+                    <div class="empty">还没有入库过文档</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段二：检索 ==================== -->
+        <section class="left hidden" id="stage2Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>检索方式</span><b>纯向量检索 · baseline</b></div>
+                <div class="pi-row"><span>距离度量</span><b>cosine</b></div>
+                <div class="pi-row"><span>相似度</span><b>1 - 距离</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">用和文档同一个模型向量化</span>
+                </div>
+                <textarea id="queryInput" class="textarea" rows="3"
+                          placeholder="问点什么，比如：大模型的幻觉问题怎么解决？（回车检索，Shift+回车换行）"></textarea>
+                <div class="retrieve-bar">
+                    <label>
+                        <span>Top-K</span>
+                        <select id="topK" class="input">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                            <option value="10">10</option>
+                        </select>
+                    </label>
+                    <button class="primary" id="btnRetrieve">
+                        <span class="btn-text">开始检索</span>
+                        <span class="spinner hidden"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="card" id="traceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 检索轨迹</h2>
+                    <span class="badge-status" id="traceStatus">RUNNING</span>
+                </div>
+                <div class="task-stats">
+                    <div><span id="tsDim">—</span><small>问题向量维度</small></div>
+                    <div><span id="tsNorm">—</span><small>L2 范数</small></div>
+                    <div><span id="tsTotal">—</span><small>库内向量数</small></div>
+                    <div><span id="tsCost">—</span><small>总耗时</small></div>
+                </div>
+                <div class="ts-vector" id="tsVector"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · 命中结果</h2>
+                    <span class="hint-inline" id="hitCount">等待检索</span>
+                </div>
+                <div id="hitPane" class="result-pane">
+                    <div class="empty">提问后这里按相似度从高到低列出 Top-K。
+                        点任意一条可以跳到阶段一，看这一片是怎么切出来的、向量长什么样。</div>
+                </div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    这里是<b>最朴素的向量检索</b>：问题转向量 → 在库里找最近的 K 条 → 按相似度排序。
+                    不加任何优化，所以它是一把<b>尺子</b> —— 后面做混合检索、重排、查询重写，
+                    都要拿这里的结果当对照，才知道到底提升没有。
+                </p>
+                <p>
+                    观察两件事：
+                </p>
+                <ul>
+                    <li><b>Top1 不一定是最能回答问题的</b>。向量只算「语义像不像」，
+                        分不清「讲了这个概念」和「回答了这个问题」。这次 Top1 是
+                        「为什么这么做有效？」，而直接给答案的排在 #2。</li>
+                    <li><b>无关内容会混进来</b>。相似度 0.58 这种分数，主题沾边但答非所问。
+                        Top-K 里通常只有前 1-2 条真正有用，这就是后面要压缩上下文的原因。</li>
+                </ul>
+                <p class="dim">
+                    相似度落在 0.5~0.7 之间很常见 —— 中文语义向量本身就在这个区间浮动，
+                    绝对值不代表好坏，<b>相对排序</b>才是。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段三：混合检索 ==================== -->
+        <section class="left hidden" id="stage3Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>召回</span><b>向量 + BM25 双路</b></div>
+                <div class="pi-row"><span>融合</span><b>RRF · 只看排名</b></div>
+                <div class="pi-row"><span>分词</span><b>数字整串 + 中文 bigram</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">两路各召回 N 条，RRF 融合后取 Top-K</span>
+                </div>
+                <textarea id="hybridQuery" class="textarea" rows="3"
+                          placeholder="试试：match-case 语法怎么用（回车检索，Shift+回车换行）"></textarea>
+                <div class="hybrid-params">
+                    <label><span>向量 Top-N</span>
+                        <input type="number" id="vecTopN" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>BM25 Top-N</span>
+                        <input type="number" id="bm25TopN" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>最终 Top-K</span>
+                        <select id="hybridTopK" class="input">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label><span>RRF k</span>
+                        <input type="number" id="rrfK" class="input num" value="60" min="1" max="1000"></label>
+                </div>
+                <button class="primary" id="btnHybrid">
+                    <span class="btn-text">开始混合检索</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="hybridTraceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 双路召回概览</h2>
+                    <span class="badge-status" id="hybridStatus">RUNNING</span>
+                </div>
+                <div class="task-stats">
+                    <div><span id="hyVecCount">—</span><small>向量召回</small></div>
+                    <div><span id="hyBm25Count">—</span><small>BM25 召回</small></div>
+                    <div><span id="hyOverlap">—</span><small>两路重叠</small></div>
+                    <div><span id="hyCost">—</span><small>总耗时</small></div>
+                </div>
+                <div class="ts-vector" id="hyTokens"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · RRF 融合结果</h2>
+                    <span class="hint-inline" id="hybridHitCount">等待检索</span>
+                </div>
+                <div id="hybridHitPane" class="result-pane">
+                    <div class="empty">检索后这里按 RRF 分数排序，每条都会标注它在两路里原本排第几。</div>
+                </div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>为什么加 BM25？</b> 向量检索算的是「语义像不像」，它分不清 Python 3.10 和 3.11；
+                    BM25 算的是「这个词出现了没有」，能精确命中 <code>3.10</code> 这种字面量。
+                    两路互补：一个管「意思接近」，一个管「字面对上」。
+                </p>
+                <p>
+                    <b>为什么用 RRF 而不是加权求和？</b> 余弦相似度 0.62 和 BM25 分数 18.42 量纲完全不同，
+                    没法相加（0.1 的余弦差等于多少 BM25 分？没人说得清）。RRF 只看排名，
+                    把「第几名」换算成 <code>1/(k+rank)</code>，天然绕开量纲问题。
+                </p>
+                <p>
+                    <b>观察这个：</b> 找一条 <span style="color:#16a34a;font-weight:600">双路</span> 标记的结果，
+                    看它是不是在向量里排第 8、BM25 里排第 2，融合后顶到了第 1 —— 这就是「两边都说它相关」的加成。
+                    <br>反过来，标 <span style="color:#d97706;font-weight:600">仅 BM25</span> 的那条，
+                    通常是数字、编号、专业术语，向量模型完全没抓到。
+                </p>
+                <p class="dim">
+                    ⚠️ RRF 也有副作用：它会给「两路都出现但都排中游」的候选加分，
+                    偶尔把不相关的顶上来。如果日志里出现 <code>Top1 在两路里都不靠前</code> 的黄色警告，
+                    就是这个情况 —— 那正是阶段四「重排序」要解决的问题。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段四：重排序 ==================== -->
+        <section class="left hidden" id="stage4Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>两段式</span><b>召回 Top-N → 精排 Top-K</b></div>
+                <div class="pi-row"><span>重排模型</span><b id="piRerankModel">gte-rerank-v2</b></div>
+                <div class="pi-row"><span>模型类型</span><b>交叉编码器</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">先粗召回，再让重排模型逐条判断相关性</span>
+                </div>
+                <textarea id="rerankQuery" class="textarea" rows="3"
+                          placeholder="试试：Python 3.10 有什么新特性（回车检索）"></textarea>
+                <div class="hybrid-params two">
+                    <label><span>召回 Top-N</span>
+                        <input type="number" id="recallTopN" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>保留 Top-K</span>
+                        <select id="rerankTopK" class="input">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                </div>
+                <button class="primary" id="btnRerank">
+                    <span class="btn-text">开始重排</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="rerankTraceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 重排概览</h2>
+                    <span class="badge-status" id="rerankStatus">RUNNING</span>
+                </div>
+                <div class="task-stats">
+                    <div><span id="rrRecall">—</span><small>召回候选</small></div>
+                    <div><span id="rrScored">—</span><small>已打分</small></div>
+                    <div><span id="rrTop1">—</span><small>Top1 重排分</small></div>
+                    <div><span id="rrCost">—</span><small>总耗时</small></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · 重排结果</h2>
+                    <span class="hint-inline" id="rerankHitCount">等待检索</span>
+                </div>
+                <div id="rerankHitPane" class="result-pane">
+                    <div class="empty">重排后这里按相关性分排序，每条标注它在召回时的原始排名和升降幅度。</div>
+                </div>
+            </div>
+
+            <div class="card" id="droppedCard" style="display:none">
+                <div class="card-head">
+                    <h2>被挤出的候选</h2>
+                    <span class="hint-inline">召回时在 Top-K 内，重排后掉出去</span>
+                </div>
+                <div id="droppedPane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>为什么要两段？</b> 交叉编码器太慢，不可能对全库跑。所以先用便宜的向量 + BM25
+                    从几万条里粗筛出 20 条（召回），再用贵的重排模型逐条精判（精排）。
+                    这就是工业界的标准做法：<code>召回负责「不漏」，精排负责「准」</code>。
+                </p>
+                <p>
+                    <b>双塔 vs 交叉编码器</b>，差别在「query 和 doc 有没有见过面」：
+                </p>
+                <ul>
+                    <li><b>双塔（embedding）</b>：query 编码一次、doc 编码一次，两个向量算距离。
+                        doc 可以离线预算好，所以快 —— 但它俩从没见过面，只能比「整体像不像」。</li>
+                    <li><b>交叉编码器（rerank）</b>：把 query 和 doc <b>拼在一起</b>送进模型，
+                        能看到「python」和「3.10」这两个词是怎么互相作用的。
+                        所以慢，但能分清 3.10 和 3.11。</li>
+                </ul>
+                <p>
+                    <b>重点看「↑N」</b>：一条内容召回时排第 13，重排后升到第 1 —— 这就是重排在做的事。
+                    反过来，标「↓N」的被压下去了，说明它只是「字面沾边」但不是真答案。
+                    如果出现「被挤出的候选」卡片，那些内容原本会被当成最相关喂给大模型。
+                </p>
+                <p class="dim">
+                    实测：问「Python 3.10 有什么新特性」，3.10 那段 rerank <b>0.5287</b>，
+                    3.11 那段只有 <b>0.1857</b> —— 向量检索分不出来的，这里分得清清楚楚。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段五：上下文控制 ==================== -->
+        <section class="left hidden" id="stage5Pane">
+            <div class="card pipeline-info">
+                <div class="pi-row"><span>链路</span><b>召回 → 重排 → 拆句 → 压缩</b></div>
+                <div class="pi-row"><span>打分策略</span><b id="piCtxStrategy">VECTOR</b></div>
+                <div class="pi-row"><span>输出</span><b>可直接拼进 Prompt</b></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>1 · 提问</h2>
+                    <span class="hint-inline">只保留真正回答问题的句子</span>
+                </div>
+                <textarea id="ctxQuery" class="textarea" rows="3"
+                          placeholder="试试：数字化交付的模型深度要求（回车生成上下文）"></textarea>
+                <div class="hybrid-params four">
+                    <label><span>召回 Top-N</span>
+                        <input type="number" id="ctxRecall" class="input num" value="20" min="5" max="50"></label>
+                    <label><span>源切片 Top-K</span>
+                        <input type="number" id="ctxTopK" class="input num" value="5" min="1" max="10"></label>
+                    <label><span>打分策略</span>
+                        <select id="ctxStrategy" class="input">
+                            <option value="VECTOR">向量（准）</option>
+                            <option value="KEYWORD">关键词（快）</option>
+                        </select>
+                    </label>
+                    <label><span>字数上限</span>
+                        <input type="number" id="ctxMaxChars" class="input num" value="1200" min="200" max="6000"></label>
+                </div>
+                <button class="primary" id="btnContext">
+                    <span class="btn-text">生成上下文</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <div class="card" id="ctxTraceCard" style="display:none">
+                <div class="card-head">
+                    <h2>2 · 压缩效果</h2>
+                    <span class="badge-status" id="ctxStatus">RUNNING</span>
+                </div>
+                <div class="compress-visual">
+                    <div class="cv-side">
+                        <span id="cvOriginChars">—</span>
+                        <small>压缩前（源切片总字数）</small>
+                    </div>
+                    <div class="cv-arrow">→</div>
+                    <div class="cv-side final">
+                        <span id="cvFinalChars">—</span>
+                        <small>压缩后（上下文）</small>
+                    </div>
+                    <div class="cv-ratio">
+                        <b id="cvRatio">—</b>
+                        <small>保留比例</small>
+                    </div>
+                </div>
+                <div class="task-stats">
+                    <div><span id="cvTokens">—</span><small>tokens 估算</small></div>
+                    <div><span id="cvSentences">—</span><small>选中句子</small></div>
+                    <div><span id="cvDedup">—</span><small>去重丢弃</small></div>
+                    <div><span id="cvCost">—</span><small>总耗时</small></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>3 · 最终上下文</h2>
+                    <span class="hint-inline">按原文顺序拼接，可直接复制进 Prompt</span>
+                    <button id="btnCopyCtx" class="mini-btn">复制</button>
+                </div>
+                <pre class="ctx-preview" id="ctxPreview">等待生成…</pre>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>4 · 选中的句子</h2>
+                    <span class="hint-inline" id="ctxSentCount">—</span>
+                </div>
+                <div id="ctxSentencePane" class="result-pane">
+                    <div class="empty">生成后这里按原文顺序列出选中的句子，括号里是它的相关性分。</div>
+                </div>
+            </div>
+
+            <div class="card" id="ctxSourceCard" style="display:none">
+                <div class="card-head">
+                    <h2>源切片贡献</h2>
+                    <span class="hint-inline">每片拆了几句、被选中几句</span>
+                </div>
+                <div id="ctxSourcePane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>为什么还要压缩？</b> 前面四个阶段解决了「找到最相关的 5 片」，但 5 片加起来可能 2000 字，
+                    而真正回答问题的往往只有两三句。全塞给大模型 → 贵、噪音多、容易被带偏。
+                </p>
+                <p>
+                    <b>两个细节决定成败：</b>
+                </p>
+                <ul>
+                    <li><b>去重必须有</b>。阶段一加的 overlap 会让相邻切片开头重复 80 字左右，
+                        不去重的话你以为压缩了，其实是把同样的话说了两遍。</li>
+                    <li><b>按原文顺序拼回去</b>。如果按分数从高到低排，句子顺序是跳跃的，
+                        大模型理解起来费劲，人也读不通。</li>
+                </ul>
+                <p>
+                    <b>策略对比可以自己试</b>：把「向量」切成「关键词」再跑一次同样的问题 ——
+                    关键词模式毫秒级完成、不花钱，但你会看到它更容易被高频词带偏。
+                    这就是文章说的「方案 2 更快但粗糙」。
+                </p>
+                <p class="dim">
+                    分数参考：VECTOR 策略是句子与问题的余弦相似度，0.4~0.7 算相关；
+                    KEYWORD 策略是覆盖率加权，绝对值不可比，只看相对排序。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段六：评测 ==================== -->
+        <section class="left hidden" id="stage6Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>06 · 跑一次评测</h2>
+                    <span class="hint-inline" id="evalCaseCount">测试集读取中…</span>
+                </div>
+
+                <div class="eval-config">
+                    <div class="ec-block">
+                        <span class="ec-label">对比策略</span>
+                        <div class="chk-group" id="evalStrategies">
+                            <label class="chk"><input type="checkbox" value="VECTOR" checked><span>VECTOR</span></label>
+                            <label class="chk"><input type="checkbox" value="HYBRID" checked><span>HYBRID</span></label>
+                            <label class="chk"><input type="checkbox" value="RERANK" checked><span>RERANK</span></label>
+                            <label class="chk"><input type="checkbox" value="CONTEXT" checked><span>CONTEXT</span></label>
+                            <label class="chk"><input type="checkbox" value="REWRITE" checked><span>REWRITE</span></label>
+                        </div>
+                    </div>
+                    <div class="ec-nums">
+                        <label>Top-K
+                            <input class="input" id="evalTopK" type="number" value="5" min="1" max="20">
+                        </label>
+                        <label>召回 N
+                            <input class="input" id="evalRecall" type="number" value="20" min="5" max="50">
+                        </label>
+                    </div>
+                </div>
+
+                <button class="primary" id="btnEval">
+                    <span class="spinner hidden"></span><span class="btn-text">开始评测</span>
+                </button>
+                <p class="hint-inline" style="margin-top:8px">
+                    15 条用例 × 5 种策略约 50~70 秒 —— REWRITE 每条都要多调一次大模型。
+                    每一步都在右侧日志里，包含每个用例每个策略的排名。
+                </p>
+            </div>
+
+            <div class="card" id="evalSummaryCard" style="display:none">
+                <div class="card-head">
+                    <h2>策略对比</h2>
+                    <span class="hint-inline" id="evalMeta"></span>
+                </div>
+                <div id="evalTable" class="result-pane"></div>
+                <div id="evalCompress" class="compress-note" style="display:none"></div>
+                <div class="eval-legend">
+                    <b>Hit@1</b> 第一条就是相关 · <b>Hit@3</b> 前三条里有 · <b>Hit@K</b> 前 K 条里有 ·
+                    <b>MRR</b> 1/第一条相关的排名（越接近 1 越靠前）·
+                    <b>覆盖率</b> Top-K 里命中了几个期望关键词组<br>
+                    同一批用例、同一个 Top-K 才有可比性。耗时不含问题向量化（四种策略共用一次）。
+                </div>
+            </div>
+
+            <div class="card" id="evalMatrixCard" style="display:none">
+                <div class="card-head">
+                    <h2>逐用例明细</h2>
+                    <span class="hint-inline">数字 = 第一条相关结果排第几，— = Top-K 里没有</span>
+                </div>
+                <div id="evalMatrix" class="result-pane"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>测试集</h2>
+                    <button class="mini-btn" id="btnToggleCaseForm">+ 添加用例</button>
+                </div>
+
+                <div class="case-form hidden" id="caseForm">
+                    <div class="cf-row">
+                        <label>用例名<input class="input" id="cfName" placeholder="如：坐标系要求"></label>
+                        <label>难度
+                            <select class="input" id="cfDiff">
+                                <option value="EASY">EASY</option>
+                                <option value="MEDIUM" selected>MEDIUM</option>
+                                <option value="HARD">HARD</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label>测试问题<input class="input" id="cfQuery" placeholder="三维模型应采用什么坐标系"></label>
+                    <label>期望关键词<input class="input" id="cfExpect" placeholder="坐标系,2000 | 坐标系,CGCS2000"></label>
+                    <div class="cf-actions">
+                        <button class="mini-btn primary-mini" id="btnAddCase">保存用例</button>
+                    </div>
+                </div>
+
+                <div id="caseList" class="result-pane"></div>
+                <p class="hint-inline">
+                    期望关键词格式：<code>坐标系,2000 | 坐标系,CGCS2000</code>
+                    —— <code>|</code> 分组，逗号分隔的关键词必须同时出现才算命中；命中任意一组即算相关。
+                </p>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>没有评测，就没有优化。</b> 前面五个阶段的效果都是靠单个案例的观感判断的 ——
+                    「看，3.10 排到第一了」。但换一个问题呢？改一下切片大小呢？
+                    你没法回答「这次改动是变好了还是变差了」，只能说「好像好一点」。
+                </p>
+                <p>
+                    <b>指标怎么读</b>：
+                </p>
+                <ul>
+                    <li><b>Hit@1</b> 最严格 —— Top1 就是答案，直接决定大模型看到的重点。</li>
+                    <li><b>Hit@K</b> 是「有救」—— 有相关就行，反正都会喂给模型。</li>
+                    <li><b>MRR</b> 看「排得够不够靠前」，比 Hit 更细。</li>
+                    <li><b>覆盖率</b> 看「答案是否完整」—— 一个问题需要两个条件时，只命中一个也算 Hit@1，但答案不全。</li>
+                </ul>
+                <p>
+                    <b>别只看平均分。</b> 同样的 MRR 可能由完全不同的用例支撑。
+                    点开逐用例明细，才能看出某个策略是「简单题都稳、难题全崩」，还是「整体都还行」。
+                </p>
+                <p class="dim">
+                    诚实提醒：关键词判定只能验证字面命中，验证不了语义正确。
+                    低分不一定是实现错，也可能是用例写得刁或者库里确实没有答案。
+                    12 条用例的样本很小，一两条的差异不要过度解读。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段七：生成 ==================== -->
+        <section class="left hidden" id="stage7Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>07 · 提问</h2>
+                    <span class="hint-inline" id="genModel">模型检测中…</span>
+                </div>
+                <textarea class="input" id="genQuery" rows="2"
+                          placeholder="例：模型的采集深度应执行哪一级要求？资料不足时我会直说。"></textarea>
+                <div class="retrieve-bar">
+                    <label>Top-K
+                        <select class="input" id="genTopK">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label>召回 N
+                        <select class="input" id="genRecall">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="30">30</option>
+                        </select>
+                    </label>
+                    <button class="primary" id="btnGenerate">
+                        <span class="spinner hidden"></span><span class="btn-text">生成答案</span>
+                    </button>
+                </div>
+                <p class="hint-inline" style="margin-top:8px">
+                    检索走「召回 + 重排 + 句子压缩」，只有压缩后的句子会进 Prompt —— 上面六个阶段的成果都用上了。
+                </p>
+            </div>
+
+            <div class="card" id="genAnswerCard" style="display:none">
+                <div class="card-head">
+                    <h2>答案</h2>
+                    <div class="gen-head-right">
+                        <span class="badge-status" id="genStatus">RUNNING</span>
+                        <button class="mini-btn" id="btnCopyAnswer">复制</button>
+                    </div>
+                </div>
+                <div class="gen-meta" id="genMeta"></div>
+                <div class="gen-answer" id="genAnswer"><div class="empty">生成中…</div></div>
+                <p class="hint-inline">答案里的 <span class="cite-chip">1</span> 是依据编号，对应下面「引用依据」的第 1 条。</p>
+            </div>
+
+            <div class="card" id="genCiteCard" style="display:none">
+                <div class="card-head">
+                    <h2>引用依据</h2>
+                    <span class="hint-inline" id="genCiteMeta"></span>
+                </div>
+                <div id="genCitePane" class="result-pane"></div>
+            </div>
+
+            <div class="card" id="genPromptCard" style="display:none">
+                <div class="card-head">
+                    <h2>发给模型的 Prompt</h2>
+                    <span class="hint-inline">出问题时先看这里：是资料不对，还是提示词没约束住</span>
+                </div>
+                <div class="gen-tabs">
+                    <button class="tab active" data-prompt="user">用户消息（资料+问题）</button>
+                    <button class="tab" data-prompt="system">系统提示</button>
+                </div>
+                <pre class="gen-prompt" id="genPrompt"></pre>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>生成是唯一「模型会说话」的一步，也是最容易掩盖问题的一步。</b>
+                    答案读起来通顺，不代表它是从你的资料里来的 —— 大模型完全可以不看资料、
+                    凭训练记忆编一段很像的。所以这里强制要求它按 <code>[编号]</code> 引用，
+                    引用对不上就说明它没在用了。
+                </p>
+                <p><b>三个可以自己验证的点：</b></p>
+                <ul>
+                    <li><b>改 Top-K</b>：从 3 改成 8，prompt tokens 会涨，但答案不一定变好 ——
+                        多出来的往往是噪音。这就是「上下文控制」的意义。</li>
+                    <li><b>问一个库里没有的问题</b>：正确答案应该是「资料里没有提到」。
+                        如果它一本正经地编，说明 prompt 的约束还不够硬。</li>
+                    <li><b>看 prompt 原文</b>：很多「答非所问」一看 prompt 就明白了 ——
+                        要么资料里根本没有答案，要么关键那句被压缩掉了。</li>
+                </ul>
+                <p class="dim">
+                    成本口径：prompt_tokens 是大模型真实计费的输入量，和阶段五估算的「字 × 1.5」会有偏差，
+                    以这里的真实值为准。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段八：查询重写 ==================== -->
+        <section class="left hidden" id="stage8Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>08 · 换几种问法</h2>
+                    <span class="hint-inline">改写不是向量做的，是让大模型直接生成文本变体</span>
+                </div>
+                <textarea class="input" id="rwQuery" rows="2"
+                          placeholder="试一句口语化的：模型要建多细才够 / 大模型瞎编怎么防"></textarea>
+                <div class="retrieve-bar">
+                    <label>变体数
+                        <select class="input" id="rwVariants">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                    <label>Top-K
+                        <select class="input" id="rwTopK">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label class="chk rw-chk"><input type="checkbox" id="rwRerank" checked><span>融合后重排</span></label>
+                    <button class="primary" id="btnRewrite">
+                        <span class="spinner hidden"></span><span class="btn-text">改写并检索</span>
+                    </button>
+                </div>
+                <p class="hint-inline" style="margin-top:8px">
+                    原查询永远保留在第一位，改写只是补充。每个变体各跑一遍混合检索，再按 RRF 融合。
+                </p>
+            </div>
+
+            <div class="card" id="rwVariantCard" style="display:none">
+                <div class="card-head">
+                    <h2>变体</h2>
+                    <span class="hint-inline" id="rwVariantMeta"></span>
+                </div>
+                <div id="rwVariantPane" class="result-pane"></div>
+                <p class="hint-inline">
+                    「新增」= 这个变体召回、但原查询没召回的条数。全是 0 说明这个变体在说废话。
+                </p>
+            </div>
+
+            <div class="card" id="rwCompareCard" style="display:none">
+                <div class="card-head">
+                    <h2>重写前后对比</h2>
+                    <span class="hint-inline" id="rwCompareMeta"></span>
+                </div>
+                <div id="rwComparePane" class="result-pane"></div>
+            </div>
+
+            <div class="card" id="rwResultCard" style="display:none">
+                <div class="card-head">
+                    <h2>融合结果</h2>
+                    <span class="hint-inline" id="rwResultMeta"></span>
+                </div>
+                <div id="rwHitPane" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步（附实测结论）</h4>
+                <p>
+                    <b>改写解决的是「用词不匹配」</b>：用户说「瞎编」「靠不靠谱」，
+                    文档里写「幻觉」「准确性」。BM25 完全匹配不上，向量也只能靠语义近似。
+                    让大模型把同一个问题换几种说法，就能绕过这个鸿沟。
+                </p>
+                <p>
+                    <b>但实测结论是：在这套语料上它没带来提升。</b>
+                    15 条用例里，REWRITE 和 RERANK 的 Hit@1/Hit@3/Hit@5/MRR 几乎一模一样
+                    （66.7% / 86.7% / 100% / 0.797），而每次提问多花约 1.2 秒和 170 tokens。
+                </p>
+                <ul>
+                    <li><b>原因一：</b>语料只有 2 篇文档、1160 片，向量检索本身就够用 ——
+                        文章里也写了「知识库小于 1 万条时改写收益有限」。</li>
+                    <li><b>原因二：</b>我的测试集大多是「文档式提问」，用词本来就和原文重合。
+                        改写只在「口语 vs 文档」鸿沟大时才见效。</li>
+                    <li><b>原因三：</b>融合之后又用原问题做了一次重排，这一步会把变体带进来的
+                        差异重新压回原查询的语义上 —— 两个优化互相抵消。</li>
+                </ul>
+                <p>
+                    <b>所以这一阶段的真正产出不是「更准」，而是「知道自己为什么不该用它」。</b>
+                    没有评测集，你只会看到「加了改写」四个字，然后默认它有用。
+                </p>
+                <p class="dim">
+                    可以自己验证：把「融合后重排」关掉再跑一次 —— 指标会变差（Hit@5 86.7% vs 100%），
+                    说明融合的排序质量不如重排，两者叠加时是重排在兜底。这也解释了为什么
+                    默认配置保留了重排。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段九：多层缓存 ==================== -->
+        <section class="left hidden" id="stage9Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>09 · 缓存状态</h2>
+                    <div class="cache-actions">
+                        <button class="mini-btn" id="btnCacheRefresh">刷新</button>
+                        <button class="mini-btn" id="btnCacheClearL1" title="只清内存层，用来验证 L2 是否生效">只清 L1</button>
+                        <button class="mini-btn danger-mini" id="btnCacheClear">清空全部</button>
+                    </div>
+                </div>
+
+                <div class="cache-grid">
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L1</b><span>内存 · LRU</span></div>
+                        <div class="cl-main" id="cacheL1Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL1Hits">0</span> 次</div>
+                        <div class="cl-note">进程内，最快，重启即失</div>
+                    </div>
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L2</b><span>Redis · 持久</span></div>
+                        <div class="cl-main" id="cacheL2Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL2Hits">0</span> 次</div>
+                        <div class="cl-note" id="cacheRedisAddr">—</div>
+                    </div>
+                    <div class="cache-layer">
+                        <div class="cl-head"><b>L3</b><span>语义 · 相似即可</span></div>
+                        <div class="cl-main" id="cacheL3Size">—</div>
+                        <div class="cl-sub">命中 <span id="cacheL3Hits">0</span> 次</div>
+                        <div class="cl-note" id="cacheThreshold">阈值 —</div>
+                    </div>
+                    <div class="cache-layer total">
+                        <div class="cl-head"><b>总命中率</b><span id="cacheRateSub"></span></div>
+                        <div class="cl-main" id="cacheHitRate">—</div>
+                        <div class="cl-sub">未命中 <span id="cacheMisses">0</span> 次</div>
+                        <div class="cl-note" id="cacheTtl">TTL —</div>
+                    </div>
+                </div>
+                <p class="hint-inline">
+                    三个数字的关系：L1 是进程内缓存，L2 是 Redis（重启后还在），L3 靠向量相似度兜「换了个说法」。
+                    「只清 L1」之后同一问题仍应命中 L2 —— 这是验证多层是否真的接上的最快办法。
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>一键跑通三层</h2>
+                    <span class="hint-inline">依次：清空 → 首问 → 重复问 → 清 L1 → 再问 → 换个说法</span>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">基准问题
+                        <input class="input" id="cacheDemoQuery" value="模型的采集深度应执行哪一级要求">
+                    </label>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">同义问题（换个说法）
+                        <input class="input" id="cacheDemoParaphrase" value="模型的采集深度执行哪一级">
+                    </label>
+                    <button class="primary" id="btnCacheDemo">
+                        <span class="spinner hidden"></span><span class="btn-text">跑一遍</span>
+                    </button>
+                </div>
+                <div id="cacheDemoPane" class="result-pane" style="margin-top:12px">
+                    <div class="empty">点「跑一遍」：第一次走完整链路（约 5~7 秒），后面几次应该都是毫秒级。</div>
+                </div>
+                <p class="hint-inline">
+                    会真实调用一次大模型（首问）+ 三次缓存读取，共约 10 秒。
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>只查缓存</h2>
+                    <span class="hint-inline">不生成，只看「现在有没有被缓存」</span>
+                </div>
+                <div class="retrieve-bar">
+                    <label style="flex:1">问题
+                        <input class="input" id="cacheProbeQuery" placeholder="模型的采集深度执行哪一级">
+                    </label>
+                    <button class="mini-btn" id="btnCacheProbe">查一下</button>
+                </div>
+                <div id="cacheProbePane" class="result-pane" style="margin-top:10px"></div>
+                <p class="hint-inline">
+                    未命中时也会显示「最相似的历史问题有多像」—— 差多少、阈值该不该调，一眼能看出来。
+                </p>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>缓存是唯一能把 5 秒变成 5 毫秒的优化。</b> 但它不产生任何新能力，只是复用旧结果 ——
+                    所以「什么时候失效」比「怎么缓存」更重要。
+                </p>
+                <ul>
+                    <li><b>键要包含参数</b>：同一个问题，Top-K=3 和 Top-K=8 的结果不同，不能共用一份缓存。</li>
+                    <li><b>入库必须清缓存</b>：知识库变了，旧答案就是错的，而且页面上完全看不出来。</li>
+                    <li><b>语义阈值必须实测</b>：本项目里同义改写相似度只有 0.68~0.84，文章推荐的 0.95
+                        在这套模型上等于关闭语义缓存。数字是按模型来的，不是按经验来的。</li>
+                </ul>
+                <p class="dim">
+                    实测：L1 命中约 5~60ms，L2 约 40~90ms，未命中（走完整 RAG + 生成）约 4~7 秒。
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== 阶段十：答案质量评测 ==================== -->
+        <section class="left hidden" id="stage10Pane">
+
+            <div class="card">
+                <div class="card-head">
+                    <h2>10 · 让另一个模型来批卷</h2>
+                    <span class="hint-inline" id="aqCaseCount">测试集读取中…</span>
+                </div>
+
+                <div class="eval-config">
+                    <div class="ec-block">
+                        <span class="ec-label">量哪四项</span>
+                        <div class="chk-group">
+                            <label class="chk"><input type="checkbox" checked disabled><span>忠实度</span></label>
+                            <label class="chk"><input type="checkbox" checked disabled><span>答案相关度</span></label>
+                            <label class="chk"><input type="checkbox" checked disabled><span>上下文精度</span></label>
+                            <label class="chk"><input type="checkbox" checked disabled><span>要点覆盖</span></label>
+                        </div>
+                    </div>
+                    <div class="ec-nums">
+                        <label>Top-K
+                            <input class="input" id="aqTopK" type="number" value="5" min="1" max="10">
+                        </label>
+                    </div>
+                </div>
+
+                <button class="primary" id="btnAnswerEval">
+                    <span class="spinner hidden"></span><span class="btn-text">开始评测</span>
+                </button>
+                <p class="hint-inline" style="margin-top:8px">
+                    每条用例要跑一次完整生成 + 3 次裁判调用，9 条约 1~2 分钟。
+                    这一步量的是「答得对不对」—— 阶段六量的是「有没有检到」。
+                </p>
+            </div>
+
+            <div class="card" id="aqScoreCard" style="display:none">
+                <div class="card-head">
+                    <h2>四项指标</h2>
+                    <span class="hint-inline" id="aqMeta"></span>
+                </div>
+                <div class="aq-score-grid" id="aqScores"></div>
+                <div class="aq-verdict" id="aqVerdict"></div>
+            </div>
+
+            <div class="card" id="aqCaseCard" style="display:none">
+                <div class="card-head">
+                    <h2>逐用例</h2>
+                    <span class="hint-inline">点任意一行，看裁判逐条给出的理由</span>
+                </div>
+                <div id="aqCaseTable" class="result-pane"></div>
+            </div>
+
+            <div class="card" id="aqDetailCard" style="display:none">
+                <div class="card-head">
+                    <h2 id="aqDetailTitle">用例详情</h2>
+                    <span class="hint-inline" id="aqDetailSub"></span>
+                </div>
+                <div id="aqDetail" class="result-pane"></div>
+            </div>
+
+            <div class="card learn-note">
+                <h4>快速理解这一步</h4>
+                <p>
+                    <b>检索对了，不代表答得对。</b> 阶段六那套 Hit@K / MRR 只看「相关切片有没有进 Top-K」，
+                    它完全不管模型拿这些切片说了什么 —— 所以会出现「命中率 86.7%，答案一半是编的」。
+                </p>
+                <ul>
+                    <li><b>忠实度</b>：把答案拆成陈述，逐条问「上下文能推出来吗」。低于 1 就说明有模型自己补的话。</li>
+                    <li><b>答案相关度</b>：从答案倒推 3 个问题，和原问题算向量相似度。答非所问会在这里掉。</li>
+                    <li><b>上下文精度</b>：Top-K 里真正有用的比例，按位置加权 —— 排第一却没用扣得更多。</li>
+                    <li><b>要点覆盖</b>：期望要点有多少进了上下文。这项掉分是检索的锅，不是模型的锅。</li>
+                </ul>
+                <p class="dim">
+                    裁判必须换一个模型。让 qwen-plus 给自己的答案打分，分数会系统性偏高 ——
+                    这是 LLM-as-judge 最常见、也最容易被忽略的坑。
+                </p>
+            </div>
+        </section>
+        </div><!-- /.stage-panes -->
+        <!-- ==================== 右：日志黑窗口 ==================== -->        <aside class="log-panel">
+            <div class="log-head">
+                <div class="log-title">
+                    <i class="dot"></i>
+                    <span>ingest.log</span>
+                    <span class="log-task" id="logTaskId">等待任务</span>
+                </div>
+                <div class="log-tools">
+                    <button id="btnAuto" class="tool on" title="新日志自动滚到底部">⤓ 自动滚动</button>
+                    <button id="btnCopy" class="tool" title="复制全部日志">⧉ 复制</button>
+                    <button id="btnClear" class="tool" title="只清屏，不影响服务端记录">⌫ 清屏</button>
+                </div>
+            </div>
+            <div class="log-stats">
+                <span id="logCount">0 条</span>
+                <span class="sep">·</span>
+                <span id="logErrors" class="err-count">0 错误</span>
+                <span class="sep">·</span>
+                <span id="logConn" class="conn idle">未连接</span>
+            </div>
+            <div class="log-body" id="logBody">
+                <div class="log-welcome">
+                    <pre>  ╭─────────────────────────────────╮
+  │   R A G   L A B   ·  阶段一     │
+  │   ingest pipeline  observability │
+  ╰─────────────────────────────────╯</pre>
+                    <p>点「开始入库」后，这里逐条打印每一步做了什么、花了多久、失败为什么失败。</p>
+                    <p class="dim">日志同时写入 MySQL 的 kb_ingest_log，刷新页面或用 <code>?task=&lt;id&gt;</code> 可以完整回放。</p>
+                </div>
+            </div>
+            <div class="log-foot">
+                <span id="logFootHint">ERROR 行点一下可展开完整诊断</span>
+            </div>
+        </aside>
+    </main>
+</div>
+
+<!-- ============ 切片解剖抽屉 ============ -->
+<div class="drawer-mask hidden" id="drawerMask"></div>
+<aside class="drawer hidden" id="drawer">
+    <div class="drawer-head">
+        <div class="dh-left">
+            <h3 id="dwTitle">切片 #0</h3>
+            <p id="dwSub"></p>
+        </div>
+        <button class="drawer-close" id="dwClose" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="drawer-body" id="dwBody"></div>
+</aside>
+
+<!-- ============ 运行记录抽屉 ============ -->
+<aside class="drawer run-drawer hidden" id="runDrawer">
+    <div class="drawer-head">
+        <div class="dh-left">
+            <h3>运行记录</h3>
+            <p id="runSummary">加载中…</p>
+        </div>
+        <button class="drawer-close" id="runClose" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="run-filters">
+        <div class="rf-group">
+            <button class="rf active" data-type="ALL">全部</button>
+            <button class="rf" data-type="INGEST">入库</button>
+            <button class="rf" data-type="RETRIEVE">向量检索</button>
+            <button class="rf" data-type="HYBRID">混合检索</button>
+        </div>
+        <label class="rf-fail">
+            <input type="checkbox" id="runOnlyFailed"> 只看失败
+        </label>
+    </div>
+    <div class="drawer-body" id="runBody">
+        <div class="empty">点击某条记录，可以回放它当时的完整日志</div>
+    </div>
+</aside>
+
+<script src="./notes.js?v=13"></script>
+<script src="./demo-boot.js?v=13"></script>
+<script src="./app.js?v=13"></script>
+<!-- 访问统计：注册 GoatCounter 后，把 analytics.js 里的 CODE 填上即可生效 -->
+<script src="./analytics.js?v=13"></script>
+</body>
+</html>

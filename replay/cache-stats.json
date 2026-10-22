@@ -1,0 +1,1 @@
+{"ok":true,"data":{"stats":{"redisOk":true,"l1Size":1,"l2Keys":1,"l3Size":1,"l1Hits":1,"l2Hits":1,"l3Hits":1,"misses":18,"stores":18,"clears":2,"hitRate":0.1429,"ttlSeconds":1800,"threshold":0.8,"capacity":200,"prefix":"raglab:cache:"},"redis":"127.0.0.1:6379"},"message":null}
